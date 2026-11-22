@@ -1,0 +1,177 @@
+/* "Report a slip" page (ROADMAP T5.1). Rows, fields, the segmented choice and buttons come from design/components.css;
+   this file places them in two numbered steps and adds the moment between the two times. */
+.report {
+  flex: 1; overflow-y: auto;
+  display: grid; align-content: start; gap: var(--s4);
+  width: 100%;
+  /* The whole column scrolls (its bar at the window's right edge); the content stays 700 px wide in the middle */
+  padding-inline: max(var(--gutter), calc((100% - 700px) / 2 + var(--gutter)));
+  padding-block: 0 var(--s14);
+  scrollbar-gutter: stable;
+}
+.report[hidden] { display: none; }
+.report-head { display: flex; align-items: flex-start; gap: var(--s2); margin: 0 0 var(--s2) calc(var(--s2) * -1); }
+.report-head .btn-icon { margin-top: -2px; }
+.report-sub { margin-top: var(--s1); max-width: 560px; font-size: var(--text-md); }
+
+.report-step { display: grid; gap: var(--s3); padding: var(--s5); }
+.report-step-title { display: flex; align-items: center; gap: var(--s3); margin: 0; font: 600 var(--text-lg) / 1.3 var(--font-display); }
+/* The step number: a small coin in the clean colour, the same one the progress ring and "Every word stays" use */
+.step-no {
+  display: grid; place-items: center; width: 26px; height: 26px; border-radius: var(--r-full);
+  background: var(--clean-soft); color: var(--clean); font: 700 var(--text-sm) / 1 var(--font);
+}
+
+/* Recent files: library rows with their rating beside them; three and a half in view, so more shows below */
+.recent-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); margin-top: var(--s1); }
+.recent { max-height: calc(3.5 * 54px); overflow-y: auto; overflow-x: hidden; margin: 0 calc(var(--s2) * -1); padding: 0 var(--s2); scrollbar-gutter: stable; }
+.recent > li[data-id] { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: var(--s2); padding-right: var(--s2); border-radius: var(--r-md); }
+.recent > li[data-id]:hover:not(:has(.lib-row[aria-current='true'])) { background: var(--hover); }
+.recent .lib-row { grid-template-columns: auto 1fr; min-height: 52px; background: transparent !important; }
+.recent .rate button { height: 26px; padding: 0 var(--s2); gap: 5px; font-size: var(--text-sm); }
+.recent-empty { padding: var(--s2) 0; }
+#source-help.is-swapping { animation: swap-in var(--t-normal) var(--ease-out) both; }
+#source-help { margin-top: calc(var(--s2) * -1); }
+
+/* What went wrong: labels on the left, the answers on the right */
+.report-form { display: grid; grid-template-columns: max-content 1fr; align-items: center; gap: var(--s3) var(--s5); }
+.report-form .seg { justify-self: start; }
+.moment { display: flex; align-items: center; gap: var(--s2); }
+.field-time { width: 88px; padding: 0 var(--s3); }
+.field-time input { text-align: center; }
+/* Between From and To: a line that lights up and shows how long the moment is once both times make sense */
+.moment-span { position: relative; display: grid; place-items: center; width: 64px; height: 20px; }
+.moment-span::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2px; border-radius: 2px;
+  background: var(--border-strong); transform-origin: left;
+  transition: background-color var(--t-normal) ease;
+}
+.moment-span[data-on='true']::before { background: var(--clean); }
+.moment-len {
+  position: relative; padding: 0 6px; border-radius: var(--r-full);
+  background: var(--glass-strong); color: var(--clean); font-size: var(--text-xs); font-weight: 600;
+}
+.moment-len:empty { display: none; }
+.moment-span[data-on='true'] .moment-len { animation: pop 300ms var(--ease-out); }
+.moment > .meta { margin-left: var(--s2); }
+/* A time taken from the playhead: its box glows once */
+.field-time.is-filled { animation: filled 700ms var(--ease-out); }
+@keyframes filled { from { border-color: var(--clean); box-shadow: 0 0 0 5px var(--clean-soft); } }
+
+/* ---------- The sound strip (ROADMAP T5.2) ----------
+   The shape is a mask (strip.js) over a background of three parts: the moment's bars amber, the played bars in the
+   clean colour, the rest quiet. A muted part shows as a flat dotted line, the way Naqi cut it. */
+@property --a { syntax: '<number>'; inherits: true; initial-value: 0; }
+@property --b { syntax: '<number>'; inherits: true; initial-value: 0; }
+.strip-label { align-self: start; margin-top: 21px; }
+.strip { display: grid; gap: var(--s2); min-width: 0; }
+.strip-main { display: flex; align-items: center; gap: var(--s4); }
+.strip-play { --btn-h: 38px; flex: none; }
+.strip-play:disabled { opacity: 1; background: var(--sunken); color: var(--faint); box-shadow: none; }
+.strip-bar {
+  --played: 0;
+  position: relative; flex: 1; min-width: 0; height: 44px; margin: 6px 4px;
+  cursor: pointer; touch-action: none; outline: none;
+  transition: --a var(--t-slow) var(--ease-out), --b var(--t-slow) var(--ease-out);
+}
+/* The well the sound sits in, a little larger than the bars */
+.strip-bar::before {
+  content: ''; position: absolute; inset: -6px -10px; border-radius: var(--r-md);
+  background: var(--sunken); box-shadow: inset 0 0 0 1px var(--border);
+  transition: box-shadow var(--t-fast) ease;
+}
+.strip-bar:focus-visible::before { box-shadow: inset 0 0 0 2px var(--focus); }
+/* Before a sound is there: a flat dotted line (it breathes while the sound is read) */
+.strip-bar::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px;
+  background: radial-gradient(circle, var(--border-strong) 1px, transparent 1.5px) 0 0 / 4px 2px repeat-x;
+  transition: opacity var(--t-normal) ease;
+}
+.strip[data-state='loading'] .strip-bar::after { animation: blink 1.2s ease-in-out infinite; }
+.strip[data-state='ready'] .strip-bar::after { opacity: 0; }
+.strip:not([data-state='ready']) .strip-bar { cursor: default; }
+.strip-shape {
+  position: absolute; inset: 0;
+  mask-size: 100% 100%; mask-repeat: no-repeat;
+  background:
+    linear-gradient(to right, transparent calc(var(--a) * 100%), var(--warn) 0 calc(var(--b) * 100%), transparent 0),
+    linear-gradient(to right, var(--clean) calc(var(--played) * 100%), color-mix(in srgb, var(--muted) 52%, transparent) 0);
+  opacity: 0;
+}
+/* The sound rises out of the flat line */
+.strip[data-state='ready'] .strip-shape { opacity: 1; animation: rise 520ms var(--ease-out) both; }
+@keyframes rise { from { opacity: 0; transform: scaleY(0.06); } }
+/* The moment: a soft amber band with firm edges, behind the bars */
+.strip-moment {
+  position: absolute; top: -6px; bottom: -6px;
+  left: calc(var(--a) * 100%); width: calc((var(--b) - var(--a)) * 100%);
+  border-inline: 2px solid var(--warn); background: var(--warn-soft);
+  opacity: 0; transition: opacity var(--t-normal) ease;
+}
+.strip[data-moment='true'] .strip-moment { opacity: 1; }
+/* The playhead */
+.strip-head {
+  position: absolute; top: -9px; bottom: -9px; left: calc(var(--played) * 100%); width: 2px; margin-left: -1px;
+  border-radius: 2px; background: var(--text); opacity: 0; transition: opacity var(--t-normal) ease;
+}
+.strip-head::before {
+  content: ''; position: absolute; top: -2px; left: 50%; width: 8px; height: 8px; margin-left: -4px;
+  border-radius: 50%; background: var(--text);
+  transform: scale(0.75); transition: transform var(--t-fast) var(--ease-out);
+}
+.strip[data-state='ready'] .strip-head { opacity: 1; }
+.strip-bar:hover .strip-head::before, .strip-bar.is-dragging .strip-head::before { transform: scale(1); }
+.strip-tip {
+  position: absolute; bottom: calc(100% + 12px); left: 0; transform: translateX(-50%) translateY(4px);
+  padding: 3px 7px; border-radius: 6px; background: var(--text); color: var(--bg);
+  font-size: var(--text-xs); font-weight: 600; white-space: nowrap;
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--t-fast) ease, transform var(--t-fast) var(--ease-out);
+}
+.strip[data-state='ready'] .strip-bar:hover .strip-tip { opacity: 1; transform: translateX(-50%); }
+.strip-times { flex: none; min-width: 86px; text-align: right; font-weight: 600; font-size: var(--text-sm); white-space: nowrap; }
+.strip-tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); }
+.strip:not([data-state='ready']) .strip-tools { display: none; }
+.strip-tools #play-moment { margin-left: var(--s1); }
+.strip-tools #play-moment:not(:disabled) { color: var(--warn); }
+.strip-tools #play-moment:not(:disabled):hover { background: var(--warn-soft); color: var(--warn); }
+.strip-keys { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; }
+.strip-keys kbd {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 4px; border-radius: 5px;
+  border: 1px solid var(--border-strong); border-bottom-width: 2px; font: 600 var(--text-xs) / 1 var(--font); color: var(--muted);
+}
+/* No sound to play: only the words, no dead player */
+.strip:is([data-state='idle'], [data-state='none']) .strip-main { display: none; }
+.report-form:has(.strip:is([data-state='idle'], [data-state='none'])) .strip-label { align-self: center; margin-top: 0; }
+.strip-note { margin: 0; }
+.strip-note:empty { display: none; }
+.strip-note:not(:empty) { animation: swap-in var(--t-normal) var(--ease-out) both; }
+
+#save-slip { margin-top: var(--s1); }
+.report-status { display: flex; align-items: flex-start; gap: var(--s2); min-height: 22px; margin: 0; font-size: var(--text-sm); color: var(--muted); user-select: text; }
+.report-status:not(:empty) { animation: swap-in var(--t-normal) var(--ease-out) both; }
+.report-status .icon { flex: none; margin-top: 1px; }
+.report-status[data-kind='error'] { color: var(--danger); }
+.report-status[data-kind='done'] { color: var(--clean); }
+
+/* The side bar's way in, under the library */
+.side-report { justify-content: flex-start; gap: var(--s2); margin-top: auto; }
+.side-report[aria-current='page'] { background: var(--selected); color: var(--text); }
+
+/* A narrow window: the rating keeps its icons only (each still says "Rate Bad"...), so the titles keep their room */
+@media (max-width: 1000px) {
+  .recent .rate button { gap: 0; padding: 0 var(--s2); font-size: 0; }
+}
+@media (max-width: 760px) {
+  .report-form { grid-template-columns: 1fr; gap: var(--s2); }
+  .report-form .seg { justify-self: stretch; }
+  .report-form .seg button { padding: 0 var(--s2); white-space: nowrap; }
+  .strip-label { margin-top: 0; }
+  .strip-keys { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #source-help.is-swapping, .report-status:not(:empty), .moment-span[data-on='true'] .moment-len,
+  .field-time.is-filled, .strip[data-state='ready'] .strip-shape, .strip[data-state='loading'] .strip-bar::after,
+  .strip-note:not(:empty) { animation: none; }
+  .strip-bar { transition: none; }
+}

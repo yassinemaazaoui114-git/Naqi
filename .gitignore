@@ -1,0 +1,27 @@
+# Node
+node_modules/
+dist/
+out/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Secrets
+.env
+
+# Test clips and results (kept locally only)
+samples/
+test_out/
+
+# Big model files
+engine/models/
+*.ckpt
+
+# Project planning (steps, goals, decisions): kept on this PC only, never on GitHub
+CLAUDE.md
+PROJECT_CONTEXT.md
+ROADMAP.md
+SPEC.md
+docs/

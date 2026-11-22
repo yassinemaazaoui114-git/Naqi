@@ -1,0 +1,83 @@
+/* Player page (ROADMAP T4.1). The time bar, play button and volume come from design/components.css; this file
+   places them and adds the screen: the picture fills it, a sound-only item shows a quiet sound mark instead. */
+.watch {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column; gap: var(--s3);
+  width: 100%; max-width: 1180px; margin: 0 auto;
+  padding: 0 var(--s6) var(--s5);
+}
+.home[hidden], .watch[hidden], .screen-tag[hidden] { display: none; }
+.watch-head { display: flex; align-items: center; gap: var(--s2); min-width: 0; margin-left: calc(var(--s2) * -1); }
+.watch-titles { min-width: 0; }
+.watch-title, .watch-meta { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watch-meta { font-variant-numeric: tabular-nums; }
+
+.player { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3); }
+.screen {
+  position: relative; flex: 1; min-height: 200px;
+  display: grid; place-items: center;
+  border-radius: var(--r-lg); background: var(--screen); overflow: hidden;
+}
+.screen > * { grid-area: 1 / 1; }
+/* Out of the grid's flow, so a tall picture never makes the screen taller than its box (it is fitted inside) */
+.screen video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity var(--t-slow) ease; }
+.screen[data-picture='shown'] video { opacity: 1; }
+.screen-note, .screen-wait { margin: 0; color: rgb(255 255 255 / 0.55); font-size: var(--text-sm); pointer-events: none; }
+.screen-note { opacity: 0; transition: opacity var(--t-normal) ease; }
+.screen[data-picture='preparing'] .screen-note { opacity: 1; }
+/* A sound only (or a picture that cannot be shown): the sound mark, no empty black box with a message */
+.screen-sound {
+  display: none; place-items: center; width: 84px; height: 84px; border-radius: 26px;
+  color: var(--clean); background: rgb(255 255 255 / 0.06);
+}
+.screen[data-kind='audio'] .screen-sound { display: grid; }
+.screen[data-kind='audio'] video, .screen[data-kind='audio'] .screen-note { display: none; }
+/* Waiting at the clean edge: the picture dims and says so, the sound goes on by itself */
+.screen-wait {
+  align-self: end; margin-bottom: var(--s4); padding: 4px 10px; border-radius: var(--r-full);
+  background: rgb(0 0 0 / 0.55); color: #d7fbe9; backdrop-filter: blur(8px);
+  opacity: 0; transform: translateY(4px); transition: opacity var(--t-normal) ease, transform var(--t-normal) var(--ease-out);
+}
+.screen[data-waiting='true'] .screen-wait { opacity: 1; transform: none; }
+.screen[data-waiting='true'] video { opacity: 0.55; }
+.screen-tag { position: absolute; left: var(--s3); bottom: var(--s3); background: rgb(0 0 0 / 0.55); color: #d7fbe9; backdrop-filter: blur(8px); }
+.screen[data-waiting='true'] .screen-tag { opacity: 0; }
+
+.controls { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s1) var(--s1); min-width: 0; }
+.controls > .btn-play { flex: none; }
+.controls .range { flex: 0 1 110px; min-width: 56px; }
+/* A narrow player (small window, or a large text scale): Save and Report here keep their icons, their names move
+   into the tooltip; the volume bar gives way before anything else */
+.player { container-type: inline-size; }
+@container (max-width: 600px) {
+  .controls { gap: var(--s2); }
+  .controls :is(#save-toggle, #report-here) { width: 30px; padding: 0; gap: 0; font-size: 0; }
+  .controls :is(#save-toggle, #report-here) .icon { width: 16px; height: 16px; }
+}
+.times { font-weight: 600; white-space: nowrap; }
+
+/* Save: a row that opens under the controls (the card grows, nothing jumps); its button turns into Cancel in place,
+   a hairline bar shows the real progress, and the result's name stays in the status line */
+.save-panel {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3);
+  margin: 0 var(--s1) var(--s1); padding-top: var(--s3); border-top: 1px solid var(--border);
+}
+.save-panel .seg[hidden], .save-panel .bar[hidden], .controls .btn[hidden] { display: none; }
+.save-go { min-width: 84px; }
+.save-state { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; min-height: 1lh; }
+.save-state .bar { height: 3px; }
+.save-status { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.save-status:empty { display: none; }
+.save-status[data-state='error'] { color: var(--danger); }
+.save-status[data-state='done'] { color: var(--clean); animation: swap-in var(--t-normal) var(--ease-out) both; }
+.watch-note { margin: 0; font-size: var(--text-sm); color: var(--muted); }
+.watch-note[data-state='error'] { color: var(--danger); }
+.watch-note:not([hidden]) { animation: swap-in var(--t-normal) var(--ease-out) both; }
+
+
+@media (max-width: 960px) {
+  .watch { padding-left: var(--s4); padding-right: var(--s4); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .watch-note:not([hidden]), .save-status[data-state='done'] { animation: none; }
+}

@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src naqi-media:" />
+    <title>Naqi | نقي</title>
+    <link rel="stylesheet" href="./design/tokens.css" />
+    <link rel="stylesheet" href="./design/components.css" />
+    <link rel="stylesheet" href="./home.css" />
+    <link rel="stylesheet" href="./player.css" />
+    <link rel="stylesheet" href="./report.css" />
+  </head>
+  <body>
+    <!-- Library (left side): every cleaned file, newest first -->
+    <aside class="side" aria-label="Library">
+      <div class="brand">
+        <img src="./assets/naqi.png" alt="" width="34" height="34" />
+        <div class="brand-name">Naqi <span class="ar" lang="ar">نقي</span></div>
+      </div>
+      <div class="side-head">
+        <h2 class="section-label" id="lib-label">Library</h2>
+        <span class="tag num" id="lib-count" hidden></span>
+      </div>
+      <div class="empty lib-empty" id="lib-empty" hidden>
+        <!-- Naqi's own sign: voices stay (green), the music is gone (faint purple) -->
+        <span class="wave empty-wave" aria-hidden="true"><i style="--h:.45"></i><i style="--h:.8"></i><i class="is-music" style="--h:.15"></i><i style="--h:1"></i><i style="--h:.6"></i><i class="is-music" style="--h:.15"></i><i class="is-music" style="--h:.15"></i><i style="--h:.7"></i><i style="--h:.35"></i></span>
+        <p class="card-title">Nothing here yet</p>
+        <p class="meta">Clean a link or a file, and it waits here to be played again, rated or saved.</p>
+      </div>
+      <ul class="lib" id="lib" aria-labelledby="lib-label">
+        <li class="lib-light" aria-hidden="true"></li>
+      </ul>
+      <button class="btn btn-quiet side-report" id="open-report"><i data-icon="flag"></i>Report a slip</button>
+    </aside>
+
+    <div class="content">
+    <header class="top">
+      <div class="top-actions">
+        <div class="status status-chip" id="engine" data-state="starting" aria-live="polite">
+          <span class="status-dot"></span>
+          <div>
+            <div class="status-name" id="engine-name">Starting the engine…</div>
+            <div class="status-text" id="engine-text">Loading the music remover</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="engine-restart" hidden>Start again</button>
+        </div>
+        <div class="seg" id="theme" aria-label="Theme">
+          <button data-mode="system" aria-label="Follow Windows" title="Follow Windows"><i data-icon="system" class="icon-sm"></i></button>
+          <button data-mode="light" aria-label="Light" title="Light"><i data-icon="sun" class="icon-sm"></i></button>
+          <button data-mode="dark" aria-label="Dark" title="Dark"><i data-icon="moon" class="icon-sm"></i></button>
+        </div>
+      </div>
+    </header>
+
+    <main class="home">
+      <div class="intro">
+        <h1 class="headline">The music goes. <span class="keep">Every word stays.</span></h1>
+        <p class="meta">Paste a video link or drop your own files. Naqi removes the music; voices, singing and other sounds stay.</p>
+      </div>
+
+      <!-- The one card where things wait: the link, or the files. It never moves; only its inside changes. -->
+      <section class="drop zone" id="zone" aria-label="What to clean">
+        <svg class="drop-edge" aria-hidden="true"><rect x="1" y="1" rx="19" ry="19" /></svg>
+
+        <div class="zone-link" id="link-box">
+          <label class="section-label" for="url">Video link</label>
+          <div class="field" id="url-field">
+            <i data-icon="link"></i>
+            <input id="url" data-autofocus placeholder="https://www.youtube.com/watch?v=…  (YouTube, TikTok, Facebook…)" spellcheck="false" autocomplete="off" />
+            <button class="btn btn-icon btn-sm" id="url-clear" aria-label="Clear the link" data-tip="Clear" hidden><i data-icon="close" class="icon-sm"></i></button>
+            <button class="btn btn-ghost btn-sm" id="paste" data-tip="Ctrl+V"><i data-icon="paste" class="icon-sm"></i>Paste</button>
+          </div>
+          <p class="field-help" id="url-help" hidden></p>
+          <label class="check" id="whole-row" hidden><input type="checkbox" id="whole" /> Clean the whole playlist</label>
+          <div class="or" aria-hidden="true"><span>or</span></div>
+          <div class="zone-files-cta">
+            <span class="drop-badge"><i data-icon="upload" class="icon-lg"></i></span>
+            <div>
+              <p class="body"><b>Drop audio or video files here</b></p>
+              <p class="meta">Several at once. Your files are never changed.</p>
+            </div>
+            <button class="btn btn-ghost" id="choose" data-tip="Ctrl+O"><i data-icon="files"></i>Files…</button>
+          </div>
+        </div>
+
+        <div class="zone-files" id="files-box" hidden>
+          <div class="files-head">
+            <p class="section-label" id="files-title">1 file ready</p>
+            <div class="row-tight">
+              <button class="btn btn-quiet btn-sm" id="add-more"><i data-icon="add" class="icon-sm"></i>Add more</button>
+              <button class="btn btn-link" id="clear-files">Clear</button>
+            </div>
+          </div>
+          <ul class="files" id="files"></ul>
+          <p class="meta files-foot">Drop more files here, or add them with Add more.</p>
+        </div>
+      </section>
+
+      <!-- Options: hidden until opened; only the ones that apply to what waits -->
+      <div class="opt" id="opt-box" hidden>
+        <div class="opt-row">
+          <button class="btn btn-quiet btn-sm disclosure-toggle" id="opt-toggle" aria-expanded="false" aria-controls="opt"><i data-icon="options" class="icon-sm"></i><span>Options</span><i data-icon="down" class="icon-sm"></i></button>
+          <span class="meta opt-sum" id="opt-sum"></span>
+        </div>
+        <div class="disclosure" id="opt" data-open="false">
+          <div>
+            <div class="card opt-card">
+              <div class="opt-grid">
+                <span class="section-label" data-for="fmt">Save as</span>
+                <div class="seg" id="fmt" data-row="fmt"><button data-value="mp3">Audio (MP3)</button><button data-value="mp4">Video (MP4)</button></div>
+                <span class="section-label" data-for="quality">Quality</span>
+                <div class="seg" id="quality" data-row="quality"></div>
+                <span class="section-label" data-for="vfmt">Videos become</span>
+                <div class="seg" id="vfmt" data-row="vfmt"><button data-value="mp4">Video (MP4)</button><button data-value="mp3">Audio only (MP3)</button></div>
+                <span class="section-label" data-for="vsize">Video size</span>
+                <div class="seg" id="vsize" data-row="vsize" title="Original keeps the picture as it is (fastest). A smaller size gives a smaller file but takes longer."><button data-value="Original">Original</button><button data-value="1080p">1080p</button><button data-value="720p">720p</button><button data-value="480p">480p</button></div>
+                <span class="section-label" data-for="kbps">MP3 quality</span>
+                <div class="seg" id="kbps" data-row="kbps"><button data-value="128 kbps">128 kbps</button><button data-value="192 kbps">192 kbps</button><button data-value="320 kbps">320 kbps</button></div>
+                <span data-for="hint"></span>
+                <p class="meta" data-row="hint">Audio files (MP3, WAV…) are always saved as MP3.</p>
+                <span class="section-label" data-for="folder">Save to</span>
+                <div class="save-to" data-row="folder">
+                  <span class="path num" id="folder" title=""></span>
+                  <button class="btn btn-ghost btn-sm" id="change-folder"><i data-icon="folder" class="icon-sm"></i>Change</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-lg go" id="go" disabled><span id="go-text">Paste a link or add files</span></button>
+
+      <!-- The job: progress, then the result -->
+      <section class="card job" id="job" hidden aria-live="polite">
+        <div class="ring" id="ring" data-state="waiting">
+          <svg viewBox="0 0 120 120" aria-hidden="true">
+            <circle class="ring-ticks" cx="60" cy="60" r="56" pathLength="100" />
+            <circle class="ring-fill" cx="60" cy="60" r="46" pathLength="100" />
+          </svg>
+          <div class="ring-label">
+            <div class="ring-value num" id="ring-value">0<small>%</small></div>
+            <span class="ring-mark" id="ring-mark"></span>
+          </div>
+        </div>
+        <div class="job-body">
+          <div class="job-title-row">
+            <span class="tag" id="job-tag"></span>
+            <p class="card-title job-title" id="job-title"></p>
+          </div>
+          <p class="meta job-item" id="job-item"></p>
+          <p class="job-text" id="job-text"></p>
+          <div class="bar" id="bar"><div class="bar-fill"></div></div>
+          <div class="job-foot">
+            <span class="wave" id="wave" aria-hidden="true"></span>
+            <span class="meta" id="job-device"></span>
+            <span class="row-gap"></span>
+            <button class="btn btn-quiet btn-sm" id="show" hidden><i data-icon="folder" class="icon-sm"></i>Show in folder</button>
+            <button class="btn btn-ghost btn-sm" id="play-now" hidden><i data-icon="play" class="icon-sm"></i>Play</button>
+          </div>
+          <!-- After one cleaned file: an optional rating (old Naqi R13); several files are rated in the library -->
+          <div class="job-rate" id="job-rate" hidden><span class="meta" id="rate-note">How clean was it?</span></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- The player: one library item, its sound cleaned (while it is still being cleaned, only the lit part) -->
+    <main class="watch" id="watch" hidden aria-labelledby="watch-title">
+      <div class="watch-head">
+        <button class="btn btn-icon" id="watch-back" aria-label="Back to Home" data-tip="Back"><i data-icon="back"></i></button>
+        <div class="watch-titles">
+          <h1 class="card-title watch-title" id="watch-title" dir="auto"></h1>
+          <p class="meta watch-meta" id="watch-meta" aria-live="polite"></p>
+        </div>
+      </div>
+      <div class="player card">
+        <div class="screen" id="screen" data-kind="video" data-picture="none">
+          <video id="picture" muted playsinline preload="auto" disablepictureinpicture></video>
+          <div class="screen-sound" aria-hidden="true"><i data-icon="audio" class="icon-lg"></i></div>
+          <p class="screen-note" id="screen-note"></p>
+          <p class="screen-wait" aria-hidden="true">Waiting for the cleaning…</p>
+          <span class="tag screen-tag num" id="clean-tag" hidden></span>
+        </div>
+        <div class="timebar" id="timebar" data-cleaning="false" role="slider" tabindex="0" aria-label="Time" aria-valuemin="0">
+          <div class="timebar-track"></div>
+          <div class="timebar-clean"></div>
+          <div class="timebar-played"></div>
+          <div class="timebar-edge"></div>
+          <div class="timebar-thumb"></div>
+          <div class="timebar-tip" id="timebar-tip">0:00</div>
+        </div>
+        <div class="controls">
+          <button class="btn btn-play" id="player-play" data-autofocus aria-pressed="false" aria-label="Play (Space)"><i data-icon="play"></i><i data-icon="pause"></i></button>
+          <span class="num times"><span id="t-now">0:00</span> <span class="meta">/ <span id="t-len">0:00</span></span></span>
+          <span class="row-gap"></span>
+          <button class="btn btn-quiet btn-sm disclosure-toggle" id="save-toggle" aria-expanded="false" aria-controls="save-panel" data-tip="Save as MP3 or MP4" hidden><i data-icon="save" class="icon-sm"></i><span>Save…</span></button>
+          <button class="btn btn-icon btn-sm" id="save-show" aria-label="Show the saved file in its folder" data-tip="Show in folder" hidden><i data-icon="folder" class="icon-sm"></i></button>
+          <button class="btn btn-quiet btn-sm" id="report-here" data-tip="Music heard, or something cut? Report the last seconds"><i data-icon="flag" class="icon-sm"></i>Report here</button>
+          <button class="btn btn-icon btn-sm" id="mute" aria-label="Mute (M)" data-tip="Mute (M)"><i data-icon="volume" class="icon-sm"></i></button>
+          <input class="range" id="volume" type="range" min="0" max="1" step="0.01" value="1" aria-label="Volume" />
+        </div>
+        <!-- Save (old SPEC R14e): optional and last; made from the cleaned sound, nothing is cleaned again -->
+        <div class="disclosure" id="save-panel" data-open="false">
+          <div>
+            <div class="save-panel">
+              <div class="seg" id="save-fmt" aria-label="Save as"><button data-value="mp3">MP3</button><button data-value="mp4">MP4</button></div>
+              <div class="seg" id="save-size" aria-label="Video size" title="Original keeps the picture as it is. A smaller size gives a smaller file."><button data-value="Original">Original</button><button data-value="1080p">1080p</button><button data-value="720p">720p</button><button data-value="480p">480p</button></div>
+              <div class="seg" id="save-kbps" aria-label="MP3 quality"><button data-value="128 kbps">128 kbps</button><button data-value="192 kbps">192 kbps</button><button data-value="320 kbps">320 kbps</button></div>
+              <span class="row-gap"></span>
+              <button class="btn btn-primary btn-sm save-go" id="save-go">Save</button>
+              <div class="save-state" aria-live="polite">
+                <div class="bar" id="save-bar" hidden><div class="bar-fill"></div></div>
+                <p class="meta save-status" id="save-status"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="watch-note" id="watch-note" hidden></p>
+    </main>
+
+    <!-- Report a slip: a moment where Naqi got it wrong, saved as a permanent test case (old SPEC R11) -->
+    <main class="report" id="report" hidden aria-labelledby="report-title">
+      <div class="report-head">
+        <button class="btn btn-icon" id="report-back" data-autofocus aria-label="Back to Home" data-tip="Back"><i data-icon="back"></i></button>
+        <div>
+          <h1 class="page-title" id="report-title">Report a slip</h1>
+          <p class="meta report-sub">Heard music, or was something cut that should stay? Save the moment: every new version of Naqi is tested on it, so the mistake gets fixed for all videos.</p>
+        </div>
+      </div>
+
+      <section class="card report-step" aria-labelledby="step-pick">
+        <h2 class="report-step-title" id="step-pick"><span class="step-no num">1</span>Pick the file</h2>
+        <div class="recent-head">
+          <span class="section-label" id="recent-label">Recent files</span>
+          <span class="meta" id="recent-note"></span>
+        </div>
+        <p class="meta recent-empty" id="recent-empty" hidden>Files you clean show up here, so you can rate them or report a slip in them.</p>
+        <ul class="lib recent" id="recent" aria-labelledby="recent-label">
+          <li class="lib-light" aria-hidden="true"></li>
+        </ul>
+        <div class="field" id="source-field">
+          <i data-icon="link"></i>
+          <input id="source" placeholder="Not in the list? Paste the video link, or pick the file" spellcheck="false" autocomplete="off" aria-label="Link or file" />
+          <button class="btn btn-ghost btn-sm" id="pick-file"><i data-icon="files" class="icon-sm"></i>Pick…</button>
+        </div>
+        <p class="field-help" id="source-help"></p>
+      </section>
+
+      <section class="card report-step" aria-labelledby="step-what">
+        <h2 class="report-step-title" id="step-what"><span class="step-no num">2</span>What went wrong</h2>
+        <div class="report-form">
+          <!-- The sound strip: the picked file's cleaned sound, to find the moment by ear (ROADMAP T5.2) -->
+          <span class="section-label strip-label">Listen</span>
+          <div class="strip" id="strip" data-state="idle">
+            <div class="strip-main">
+              <button class="btn btn-play strip-play" id="strip-play" aria-pressed="false" aria-label="Play the cleaned sound (Space)" disabled><i data-icon="play"></i><i data-icon="pause"></i></button>
+              <div class="strip-bar" id="strip-bar" role="slider" tabindex="-1" aria-label="Cleaned sound, arrow keys step 1 second" aria-valuemin="0">
+                <div class="strip-moment" id="strip-moment"></div>
+                <div class="strip-shape" id="strip-shape"></div>
+                <div class="strip-head"></div>
+                <div class="strip-tip num" id="strip-tip">0:00</div>
+              </div>
+              <span class="num strip-times"><span id="strip-now">0:00</span><span class="meta"> / <span id="strip-len">0:00</span></span></span>
+            </div>
+            <div class="strip-tools">
+              <button class="btn btn-ghost btn-sm" id="from-here" disabled>From here</button>
+              <button class="btn btn-ghost btn-sm" id="to-here" disabled>To here</button>
+              <button class="btn btn-quiet btn-sm" id="play-moment" disabled><i data-icon="play" class="icon-sm"></i>Play the moment</button>
+              <span class="meta strip-keys"><kbd>←</kbd><kbd>→</kbd> 1 s</span>
+            </div>
+            <p class="meta strip-note" id="strip-note" aria-live="polite"></p>
+          </div>
+          <span class="section-label">When</span>
+          <div class="moment">
+            <div class="field field-time"><input id="from" class="num" placeholder="1:23" aria-label="From" autocomplete="off" /></div>
+            <span class="moment-span" aria-hidden="true"><span class="moment-len num" id="moment-len"></span></span>
+            <div class="field field-time"><input id="to" class="num" placeholder="1:26" aria-label="To" autocomplete="off" /></div>
+            <span class="meta">minutes:seconds</span>
+          </div>
+          <span class="section-label" id="kind-label">Problem</span>
+          <div class="seg" id="slip-kind" aria-labelledby="kind-label">
+            <button data-value="music">Music heard</button><button data-value="speech">Talking cut</button><button data-value="singing">Singing cut</button><button data-value="effects">Other sound cut</button>
+          </div>
+          <span class="section-label">Note</span>
+          <div class="field"><input id="note" placeholder="Optional, e.g. &quot;drums under the talking&quot;" autocomplete="off" aria-label="Note" /></div>
+        </div>
+      </section>
+
+      <button class="btn btn-primary btn-lg" id="save-slip"><i data-icon="flag"></i><span id="save-text">Save the slip</span></button>
+      <p class="report-status" id="report-status" aria-live="polite"></p>
+    </main>
+    </div>
+
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

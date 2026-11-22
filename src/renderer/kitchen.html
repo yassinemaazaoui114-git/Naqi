@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+    <title>Naqi design sheet</title>
+    <link rel="stylesheet" href="./design/tokens.css" />
+    <link rel="stylesheet" href="./design/components.css" />
+    <link rel="stylesheet" href="./kitchen.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <!-- Library (left side), as it will sit in the real window -->
+      <aside class="side">
+        <div class="brand">
+          <img src="./assets/naqi.png" alt="" width="34" height="34" />
+          <div>
+            <div class="brand-name">Naqi <span class="ar" lang="ar">نقي</span></div>
+            <div class="meta">Design sheet</div>
+          </div>
+        </div>
+
+        <div class="side-head">
+          <p class="section-label">Library</p>
+          <span class="tag num">5</span>
+        </div>
+        <ul class="lib" id="lib">
+          <li class="lib-light" aria-hidden="true"></li>
+          <li><button class="lib-row" data-kind="video" aria-current="true">
+            <span class="lib-thumb"><i data-icon="video"></i></span>
+            <span class="lib-text"><span class="lib-title">How the desert keeps its water</span><span class="lib-meta">youtube.com · today 09:12</span></span>
+            <span class="btn btn-play" aria-hidden="true"><i data-icon="play"></i></span>
+          </button></li>
+          <li><button class="lib-row" data-kind="audio">
+            <span class="lib-thumb"><i data-icon="audio"></i></span>
+            <span class="lib-text"><span class="lib-title">Evening lecture, part 3 (full recording from the hall with questions).mp3</span><span class="lib-meta">Own file · yesterday</span></span>
+            <span class="btn btn-play" aria-hidden="true"><i data-icon="play"></i></span>
+          </button></li>
+          <li><button class="lib-row" data-kind="video">
+            <span class="lib-thumb"><i data-icon="video"></i></span>
+            <span class="lib-text"><span class="lib-title" lang="ar" dir="auto">رحلة إلى الجبال الخضراء</span><span class="lib-meta">tiktok.com · Mon</span></span>
+            <span class="btn btn-play" aria-hidden="true"><i data-icon="play"></i></span>
+          </button></li>
+          <li><button class="lib-row" data-kind="video" data-gone="true">
+            <span class="lib-thumb"><i data-icon="video"></i></span>
+            <span class="lib-text"><span class="lib-title">Cooking with three spices</span><span class="lib-meta">Kept sound cleaned up · saved MP4</span></span>
+            <span class="btn btn-play" aria-hidden="true"><i data-icon="play"></i></span>
+          </button></li>
+          <li><button class="lib-row" data-kind="audio" data-gone="true">
+            <span class="lib-thumb"><i data-icon="audio"></i></span>
+            <span class="lib-text"><span class="lib-title">Morning reminder</span><span class="lib-meta">Gone · 3 weeks ago</span></span>
+            <span class="btn btn-play" aria-hidden="true"><i data-icon="play"></i></span>
+          </button></li>
+        </ul>
+
+        <div class="status" id="status" data-state="gpu">
+          <span class="status-dot"></span>
+          <div>
+            <div class="status-name" id="status-name">NVIDIA GeForce RTX 4050</div>
+            <div class="status-text" id="status-text">Graphics card in use · 6 GB</div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="top">
+          <div>
+            <h1 class="page-title">Design sheet</h1>
+            <p class="meta">Every piece of the new Naqi window, in both themes. Everything here moves and answers like it will in the app.</p>
+          </div>
+          <div class="top-actions">
+            <div class="seg" id="theme">
+              <button data-mode="system"><i data-icon="system" class="icon-sm"></i>System</button>
+              <button data-mode="light"><i data-icon="sun" class="icon-sm"></i>Light</button>
+              <button data-mode="dark"><i data-icon="moon" class="icon-sm"></i>Dark</button>
+            </div>
+            <a class="btn btn-quiet btn-sm" href="./index.html"><i data-icon="back" class="icon-sm"></i>Back</a>
+          </div>
+        </header>
+
+
+        <!-- 01 Colour -->
+        <section class="spec">
+          <div class="spec-head"><h2 class="card-title">Colour</h2>
+            <p class="meta">Emerald means action, progress and clean. Purple is only the brand and a little light. Glass sits over the window's soft light; in dark, over the wave picture.</p></div>
+          <div class="swatches" id="swatches"></div>
+        </section>
+
+        <!-- 02 Type -->
+        <section class="spec">
+          <div class="spec-head"><h2 class="card-title">Type</h2>
+            <p class="meta">Segoe UI Variable, Windows' own font: sharp at every size, Arabic included.</p></div>
+          <div class="type">
+            <div class="type-row"><span class="meta num">28 · Display</span><p class="headline">The music goes. Every word stays.</p></div>
+            <div class="type-row"><span class="meta num">28 · Arabic</span><p class="headline ar" lang="ar" dir="rtl">تذهب الموسيقى، ويبقى كل كلام.</p></div>
+            <div class="type-row"><span class="meta num">20 · Page</span><p class="page-title">Report a slip</p></div>
+            <div class="type-row"><span class="meta num">16 · Card</span><p class="card-title">Cleaning your video</p></div>
+            <div class="type-row"><span class="meta num">14 · Body</span><p class="body">Removes the music from videos and your own files. Voices and other sounds stay.</p></div>
+            <div class="type-row"><span class="meta num">12.5 · Meta</span><p class="meta">youtube.com · 9 min 32 s · cleaned today at 09:12</p></div>
+            <div class="type-row"><span class="meta num">12.5 · Label</span><p class="section-label">Options</p></div>
+          </div>
+        </section>
+
+        <!-- 03 Buttons -->
+        <section class="spec">
+          <div class="spec-head"><h2 class="card-title">Buttons</h2>
+            <p class="meta">One emerald action per page. Every button gives under the finger. Hover the round icons for their names.</p></div>
+          <div class="row">
+            <button class="btn btn-primary btn-lg" id="primary-demo"><i data-icon="play"></i><span>Clean and play</span></button>
+            <button class="btn btn-primary"><i data-icon="save"></i>Save…</button>
+            <button class="btn btn-primary" disabled>Clean files</button>
+          </div>
+          <div class="row">
+            <button class="btn btn-ghost"><i data-icon="files"></i>Files…</button>
+            <button class="btn btn-ghost" aria-pressed="false" id="toggle-demo"><i data-icon="options"></i>Options</button>
+            <button class="btn btn-quiet"><i data-icon="folder"></i>Show in folder</button>
+            <button class="btn btn-danger"><i data-icon="trash"></i>Delete</button>
+            <button class="btn btn-link">Clear all</button>
+          </div>
+          <div class="row">
+            <button class="btn btn-icon" data-tip="Paste link" aria-label="Paste link"><i data-icon="paste"></i></button>
+            <button class="btn btn-icon" data-tip="Show in folder" aria-label="Show in folder"><i data-icon="folder"></i></button>
+            <button class="btn btn-icon" data-tip="Report here" aria-label="Report here"><i data-icon="flag"></i></button>
+            <button class="btn btn-icon" data-tip="Remove" aria-label="Remove"><i data-icon="close"></i></button>
+            <span class="row-gap"></span>
+            <button class="btn btn-play" id="play-demo" aria-pressed="false" aria-label="Play"><i data-icon="play"></i><i data-icon="pause"></i></button>
+            <span class="meta">Play and pause morph into each other.</span>
+          </div>
+          <p class="meta">Press <b>Clean and play</b>: it turns into Cancel in place, so nothing on the page moves.</p>
+        </section>
+
+        <!-- 04 Inputs -->
+        <section class="spec">
+          <div class="spec-head"><h2 class="card-title">Inputs and choices</h2>
+            <p class="meta">Labels stay visible; errors sit under the field that has them.</p></div>
+          <div class="grid2">
+            <div>
+              <label class="section-label" for="link">Video link</label>
+              <div class="field" style="margin-top: 8px">
+                <i data-icon="link"></i>
+                <input id="link" placeholder="Paste a link from YouTube, TikTok, Facebook…" spellcheck="false" />
+                <button class="btn btn-ghost btn-sm" id="paste"><i data-icon="paste" class="icon-sm"></i>Paste</button>
+              </div>
+              <p class="field-help">Any site yt-dlp supports. A playlist link cleans every video in it.</p>
+            </div>
+            <div>
+              <label class="section-label" for="link-bad">With an error</label>
+              <div class="field" data-state="error" style="margin-top: 8px">
+                <i data-icon="link"></i>
+                <input id="link-bad" value="htps://youtu.be/abc" spellcheck="false" />
+              </div>
+              <p class="field-help" data-state="error">This does not look like a link. Check the start: it should begin with https://</p>
+            </div>
+          </div>
+          <div class="choices">
+            <div class="choice"><span class="section-label">Save as</span><div class="seg js-seg"><button>MP3</button><button>MP4</button></div></div>
+            <div class="choice"><span class="section-label">Video size</span><div class="seg js-seg"><button>Original</button><button>1080p</button><button>720p</button><button>480p</button></div></div>
+            <div class="choice"><span class="section-label">MP3 quality</span><div class="seg js-seg"><button>128k</button><button>192k</button><button>320k</button></div></div>
+          </div>
+          <div class="row">
+            <label class="check"><input type="checkbox" checked /> Open the folder when done</label>
+            <label class="check"><input type="checkbox" /> Keep the original</label>
+            <label class="switch"><input type="checkbox" checked /> Play as soon as it can</label>
+            <span class="row-gap"></span>
+            <i data-icon="volume" class="vol-icon"></i><input class="range" type="range" min="0" max="1" step="0.01" value="0.7" aria-label="Volume" id="vol" />
+          </div>
+        </section>
+
+        <!-- 05 Home pieces -->
+        <section class="spec">
+          <div class="spec-head"><h2 class="card-title">Drop zone, files, Options</h2>
+            <p class="meta">Drag any file from the desktop over this window: the border wakes up and marches.</p></div>
+          <div class="drop" id="drop">
+            <svg class="drop-edge" aria-hidden="true"><rect x="1" y="1" rx="19" ry="19" style="width: calc(100% - 2px); height: calc(100% - 2px)" /></svg>
+            <span class="drop-badge"><i data-icon="upload" class="icon-lg"></i></span>
+            <p class="card-title">Paste a video link or drop files here</p>
+            <p class="meta">Videos and sound files, several at once</p>
+          </div>
+          <div class="card files-card">
+            <div class="files-head">
+              <p class="section-label"><span id="file-count" class="num">3</span> files</p>
+              <div class="row-tight">
+                <button class="btn btn-quiet btn-sm" id="add-file"><i data-icon="add" class="icon-sm"></i>Add more</button>
+                <button class="btn btn-link" id="clear-files">Clear</button>
+              </div>
+            </div>
+            <ul class="files" id="files"></ul>
+            <div class="empty" id="files-empty" hidden><i data-icon="files"></i><p class="body">No files yet</p><p class="meta">Drop some here, or press Add more.</p></div>
+            <hr class="divider" />
+            <button class="btn btn-quiet btn-sm disclosure-toggle" id="opt-toggle" aria-expanded="false" aria-controls="opt"><span>Options</span><i data-icon="down" class="icon-sm"></i></button>
+            <div class="disclosure" id="opt" data-open="false">
+              <div>
+                <div class="choices opt-inner">
+                  <div class="choice"><span class="section-label">Videos become</span><div class="seg js-seg"><button>MP4</button><button>MP3</button></div></div>
+                  <div class="choice"><span class="section-label">Size</span><div class="seg js-seg"><button>Original</button><button>720p</button><button>480p</button></div></div>
+                  <div class="choice"><span class="section-label">Save to</span><button class="btn btn-ghost btn-sm"><i data-icon="folder" class="icon-sm"></i>Naqi\2026-11-22</button></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 06 Progress -->
+        <section class="spec">
+          <div class="spec-head"><h2 class="card-title">Cleaning in progress</h2>
+            <p class="meta">The ring and the bar show the real value only. The light running over the bar and the moving voice wave show that work goes on, never fake progress.</p></div>
+          <div class="card job">
+            <div class="ring" id="ring" data-state="idle">
+              <svg viewBox="0 0 120 120" aria-hidden="true">
+                <circle class="ring-ticks" cx="60" cy="60" r="56" pathLength="100" />
+                <circle class="ring-fill" cx="60" cy="60" r="46" pathLength="100" />
+              </svg>
+              <div class="ring-label">
+                <div class="ring-value num" id="ring-value">0<small>%</small></div>
+                <span class="ring-mark" id="ring-mark"></span>
+              </div>
+            </div>
+            <div class="job-body">
+              <div class="job-title-row">
+                <span class="tag tag-video">VIDEO</span>
+                <p class="card-title job-title">How the desert keeps its water</p>
+              </div>
+              <p class="meta" id="job-text" aria-live="polite">Ready to start.</p>
+              <div class="bar" id="bar"><div class="bar-fill"></div></div>
+              <div class="job-foot">
+                <span class="wave" id="wave" aria-hidden="true"></span>
+                <span class="meta num" id="job-numbers"></span>
+              </div>
+            </div>
+            <div class="job-actions">
+              <button class="btn btn-primary btn-sm" id="job-run"><i data-icon="play" class="icon-sm"></i>Run demo</button>
+              <button class="btn btn-quiet btn-sm" id="job-error">Show error</button>
+              <button class="btn btn-quiet btn-sm" id="job-cancel">Cancel</button>
+            </div>
+          </div>
+          <div class="row">
+            <span class="section-label">Engine light</span>
+            <div class="seg js-seg" id="status-demo"><button data-state="gpu">GPU</button><button data-state="cpu">CPU only</button><button data-state="starting">Starting</button><button data-state="stopped">Stopped</button></div>
+            <label class="switch"><input type="checkbox" id="busy-demo" /> Busy</label>
+            <span class="meta">(changes the light at the bottom of the library)</span>
+          </div>
+        </section>
+
+        <!-- 07 Player -->
+        <section class="spec">
+          <div class="spec-head"><h2 class="card-title">Player</h2>
+            <p class="meta">The clean part of the time bar glows; the rest is hatched. You can jump only inside the clean part, and the edge breathes while cleaning goes on.</p></div>
+          <div class="player card">
+            <div class="screen">
+              <p class="screen-note">The video plays here</p>
+              <span class="tag screen-tag num" id="clean-tag">Clean up to 2:51</span>
+            </div>
+            <div class="timebar" id="timebar" data-cleaning="true" role="slider" tabindex="0" aria-label="Time" aria-valuemin="0">
+              <div class="timebar-track"></div>
+              <div class="timebar-clean"></div>
+              <div class="timebar-played"></div>
+              <div class="timebar-edge"></div>
+              <div class="timebar-thumb"></div>
+              <div class="timebar-tip" id="timebar-tip">0:00</div>
+            </div>
+            <div class="controls">
+              <button class="btn btn-play" id="player-play" aria-pressed="false" aria-label="Play"><i data-icon="play"></i><i data-icon="pause"></i></button>
+              <span class="num times"><span id="t-now">0:00</span> <span class="meta">/ 9:32</span></span>
+              <span class="row-gap"></span>
+              <button class="btn btn-quiet btn-sm"><i data-icon="flag" class="icon-sm"></i>Report here</button>
+              <button class="btn btn-ghost btn-sm"><i data-icon="save" class="icon-sm"></i>Save…</button>
+              <button class="btn btn-icon btn-sm" id="mute" aria-label="Mute" data-tip="Mute"><i data-icon="volume" class="icon-sm"></i></button>
+              <input class="range" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="Volume" />
+            </div>
+          </div>
+        </section>
+
+        <!-- 08 Feedback -->
+        <section class="spec">
+          <div class="spec-head"><h2 class="card-title">Rating, messages, empty</h2>
+            <p class="meta">Engine errors arrive as messages in plain words, never as a frozen window.</p></div>
+          <div class="row">
+            <span class="body">How clean was it?</span>
+            <div class="rate" role="radiogroup" id="rate">
+              <button role="radio" aria-checked="false" data-value="bad"><i data-icon="thumb-down" class="icon-sm"></i>Bad</button>
+              <button role="radio" aria-checked="false" data-value="good"><i data-icon="thumb-up" class="icon-sm"></i>Good</button>
+              <button role="radio" aria-checked="false" data-value="perfect"><i data-icon="check" class="icon-sm"></i>Perfect</button>
+            </div>
+            <span class="meta" id="rate-note"></span>
+          </div>
+          <div class="msgs">
+            <div class="msg" data-kind="done"><i data-icon="done"></i><div><p class="msg-title">Saved</p><p class="msg-text">How the desert keeps its water.mp4 is in Naqi\2026-11-22.</p></div><button class="btn btn-quiet btn-sm">Show</button></div>
+            <div class="msg" data-kind="warn"><i data-icon="warning"></i><div><p class="msg-title">Using the CPU</p><p class="msg-text">No graphics card was found, so cleaning is slower (about a third of real time).</p></div><span></span></div>
+            <div class="msg" data-kind="error"><i data-icon="error"></i><div><p class="msg-title">This video is private</p><p class="msg-text">The site does not let anyone outside the owner's list watch it. Try another link.</p></div><button class="btn btn-icon btn-sm" aria-label="Close"><i data-icon="close" class="icon-sm"></i></button></div>
+            <div class="msg"><i data-icon="info"></i><div><p class="msg-title">Plays in about 20 seconds</p><p class="msg-text">The first part is being cleaned; the rest follows while you watch.</p></div><span></span></div>
+          </div>
+          <div class="row">
+            <button class="btn btn-ghost" id="toast-btn">Show a toast</button>
+            <button class="btn btn-ghost" id="toast-err">Show an error toast</button>
+          </div>
+          <div class="card card-quiet empty-demo">
+            <div class="empty"><i data-icon="library"></i><p class="body">Nothing cleaned yet</p><p class="meta">What you clean shows up here, ready to play again.</p></div>
+          </div>
+        </section>
+
+        <!-- 09 Icons -->
+        <section class="spec">
+          <div class="spec-head"><h2 class="card-title">Icons</h2>
+            <p class="meta">Drawn for Naqi: one stroke, rounded ends, a 24 px grid.</p></div>
+          <div class="icons" id="icons"></div>
+        </section>
+      </main>
+    </div>
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+    <script type="module" src="./kitchen.js"></script>
+  </body>
+</html>
