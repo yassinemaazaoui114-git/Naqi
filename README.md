@@ -21,13 +21,9 @@
 ## Demo
 
 
-Uploading naqi-demo-720p.mp4…
 
+https://github.com/user-attachments/assets/74015fb7-a440-4772-8fb0-26963ba9043c
 
-<p align="center">
-  <a href="media/naqi-demo.mp4"><img src="media/demo-poster.jpg" alt="Watch the Naqi demo (3 min, with sound)" width="720"></a><br>
-  <a href="media/naqi-demo.mp4"><b>▶ Watch the 3-minute demo</b></a> (1080p, with sound): every feature, recorded in the real app.
-</p>
 
 ## Overview
 
