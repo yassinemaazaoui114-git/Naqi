@@ -24,6 +24,17 @@
 
 https://github.com/user-attachments/assets/74015fb7-a440-4772-8fb0-26963ba9043c
 
+### New since the demo
+
+- **Player keys** like YouTube's: Space / K, J / L, arrows, M, F, T, I, and `?` for the list
+- **Player bar on the picture** that hides when the mouse stops
+- **Fullscreen** and **theater mode**
+- **Muted parts** marked on the time bar
+- **Miniplayer**: keeps playing in a corner when you leave the player
+- **Settings menu** (gear) with **Speed** 0.5x to 2x; Save and Report here moved into it
+- **Copied link noticed**: offers to clean a video link you just copied
+- **Copy details** on error messages, for easy bug reports
+
 
 ## Overview
 
