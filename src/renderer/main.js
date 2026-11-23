@@ -7,6 +7,7 @@ import { hydrateIcons, icon } from './design/icons.js'
 import { setupThemeButton } from './design/theme.js'
 import { setupTips } from './design/tips.js'
 import { detailsButton } from './details.js'
+import { setupLaunch } from './launch.js'
 import * as library from './library.js'
 import * as pages from './pages.js'
 import * as player from './player.js'
@@ -721,6 +722,7 @@ async function init() {
   hydrateIcons()
   setupTips()
   setupThemeButton($('#theme'))
+  setupLaunch()
   state.settings = { ...DEFAULTS, ...(await window.naqi.getSettings()) }
   fmt.set(null, state.settings.format)
   fillQuality()

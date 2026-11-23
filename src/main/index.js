@@ -154,8 +154,10 @@ function createWindow() {
 
   // NAQI_PAGE=kitchen opens the design sheet directly
   const page = process.env.NAQI_PAGE === 'kitchen' ? 'kitchen.html' : 'index.html'
-  if (process.env.ELECTRON_RENDERER_URL) win.loadURL(`${process.env.ELECTRON_RENDERER_URL}/${page}`)
-  else win.loadFile(join(__dirname, '../renderer', page))
+  // NAQI_INTRO=wave | sweep | headline shows one of the other launch intros (launch.js); none = the ring
+  const query = process.env.NAQI_INTRO ? { intro: process.env.NAQI_INTRO } : {}
+  if (process.env.ELECTRON_RENDERER_URL) win.loadURL(`${process.env.ELECTRON_RENDERER_URL}/${page}?${new URLSearchParams(query)}`)
+  else win.loadFile(join(__dirname, '../renderer', page), { query })
   return win
 }
 

@@ -1,0 +1,117 @@
+/* Launch intro (once per start, about 1.3 s), first design ("wave"): a busy sound wave rises, the music spikes (purple) fall away, the voice
+   bars (green) stay, the name appears above them, then the logo flies to its place in the library while the page shows through.
+   The page under it is already live: the intro never takes a click or a key, and either one ends it at once. */
+/* --lt: one knob for the whole intro's pace (1 = the first try; the JS hand-off reads it too) */
+.launch { --lt: 1.3; position: fixed; inset: 0; z-index: 1000; pointer-events: none; }
+.launch-bg { position: absolute; inset: 0; background: var(--bg); }
+.launch-stage {
+  position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: var(--s6);
+}
+.launch-wave { display: flex; align-items: center; gap: 5px; height: 64px; }
+.launch-wave i {
+  width: 5px; height: 100%; border-radius: var(--r-full); background: var(--clean);
+  opacity: 0; transform: scaleY(0.08);
+}
+.launch-wave i.is-music { background: var(--brand); }
+
+/* The same proportions as the side bar's brand (34 px logo, 16 px name, 12 px gap) at 56 / 34, so it lands exactly */
+.launch-brand { order: -1; display: flex; align-items: center; gap: 20px; opacity: 0; transform: translateY(8px); transform-origin: 0 0; }
+.launch-brand img { width: 56px; height: 56px; border-radius: 16px; box-shadow: 0 10px 26px -10px var(--glow-brand); }
+.launch-brand .brand-name { font-size: 26.4px; }
+
+/* 1. the wave rises from the middle out; 2. the music falls; 3. the name comes up */
+.launch.is-go .launch-wave i {
+  animation: launch-rise calc(220ms * var(--lt)) var(--ease-out) calc(var(--d) * calc(14ms * var(--lt))) forwards;
+}
+.launch.is-go .launch-wave i.is-music {
+  animation: launch-rise calc(220ms * var(--lt)) var(--ease-out) calc(var(--d) * calc(14ms * var(--lt))) forwards,
+    launch-drop calc(260ms * var(--lt)) var(--ease-in-out) calc(270ms * var(--lt)) forwards;
+}
+.launch.is-go .launch-brand { animation: launch-brand-in calc(220ms * var(--lt)) var(--ease-out) calc(340ms * var(--lt)) forwards; }
+@keyframes launch-rise { to { opacity: 1; transform: scaleY(var(--h)); } }
+@keyframes launch-drop {
+  from { opacity: 1; transform: scaleY(var(--h)); }
+  to { opacity: 0.3; transform: scaleY(0.1); }
+}
+@keyframes launch-brand-in { to { opacity: 1; transform: none; } }
+
+/* 4. the hand-off (launch.js flies the logo; these fade the rest) */
+/* Home comes in only once the flying pieces have left the middle (never under a still logo or name) */
+.launch.is-leaving .launch-bg { transition: opacity calc(260ms * var(--lt)) var(--ease-out) calc(130ms * var(--lt)); opacity: 0; }
+.launch.is-leaving .launch-wave { transition: opacity calc(180ms * var(--lt)) var(--ease-out), transform calc(320ms * var(--lt)) var(--ease-out); opacity: 0; transform: translateY(10px); }
+
+/* A click or a key: everything goes at once */
+.launch.is-skip { transition: opacity 120ms var(--ease-out); opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .launch.is-go .launch-wave i, .launch.is-go .launch-wave i.is-music, .launch.is-go .launch-brand { animation: none; }
+  .launch-wave i { opacity: 1; transform: scaleY(var(--h)); }
+  .launch-wave i.is-music { opacity: 0.3; transform: scaleY(0.1); }
+  .launch-brand { opacity: 1; transform: none; }
+  .launch.is-leaving { transition: opacity calc(200ms * var(--lt)) ease; opacity: 0; }
+  .launch.is-leaving .launch-wave { transform: none; }
+}
+
+/* ---------- The other designs (Yassine chose the ring, SPEC R35); the one above is NAQI_INTRO=wave ---------- */
+
+/* Sweep: a clean line crosses the wave left to right; behind it only the voices are left */
+.launch[data-variant='sweep'] .launch-wave { position: relative; gap: 4px; height: 56px; }
+.launch[data-variant='sweep'] .launch-wave i { width: 4px; }
+.launch[data-variant='sweep'].is-go .launch-wave i { animation: launch-rise calc(200ms * var(--lt)) var(--ease-out) calc(var(--i) * calc(5ms * var(--lt))) forwards; }
+.launch[data-variant='sweep'].is-go .launch-wave i.is-music {
+  animation: launch-rise calc(200ms * var(--lt)) var(--ease-out) calc(var(--i) * calc(5ms * var(--lt))) forwards,
+    launch-drop calc(180ms * var(--lt)) var(--ease-out) calc(calc(200ms * var(--lt)) + var(--i) * calc(12.5ms * var(--lt))) forwards;
+}
+.launch-scan {
+  position: absolute; top: -12px; bottom: -12px; left: 0; width: 2px; border-radius: var(--r-full);
+  background: var(--clean); box-shadow: 0 0 14px 2px var(--clean-glow); opacity: 0;
+}
+.launch[data-variant='sweep'].is-go .launch-scan { animation: launch-scan calc(380ms * var(--lt)) linear calc(200ms * var(--lt)) forwards; }
+.launch[data-variant='sweep'].is-go .launch-brand { animation-delay: calc(300ms * var(--lt)); }
+@keyframes launch-scan {
+  0% { opacity: 0; transform: translateX(0); }
+  10%, 90% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(244px); }
+}
+
+/* Ring (the chosen one, shown by default): the wave goes round the logo; the music spikes pull back, the voices stay, the logo flies home */
+.launch-ring { position: relative; width: 160px; height: 160px; display: grid; place-items: center; }
+.launch-ring img {
+  width: 56px; height: 56px; border-radius: 16px; box-shadow: 0 10px 26px -10px var(--glow-brand);
+  opacity: 0; transform: scale(0.92);
+}
+.launch-ring b {
+  position: absolute; left: 50%; top: 50%; width: 4px; height: 26px; margin: -13px 0 0 -2px;
+  transform: rotate(var(--ang)) translateY(-56px);
+}
+.launch-ring b i {
+  display: block; width: 100%; height: 100%; border-radius: var(--r-full); background: var(--clean);
+  opacity: 0; transform: scaleY(0.08); transform-origin: 50% 100%;
+}
+.launch-ring b.is-music i { background: var(--brand); }
+.launch-name { opacity: 0; transform: translateY(8px); font-size: 22px; white-space: nowrap; }
+.launch[data-variant='ring'].is-go .launch-ring img { animation: launch-brand-in calc(260ms * var(--lt)) var(--ease-out) calc(40ms * var(--lt)) forwards; }
+.launch[data-variant='ring'].is-go .launch-ring i { animation: launch-rise calc(220ms * var(--lt)) var(--ease-out) calc(var(--k) * calc(9ms * var(--lt))) forwards; }
+.launch[data-variant='ring'].is-go .launch-ring b.is-music i {
+  animation: launch-rise calc(220ms * var(--lt)) var(--ease-out) calc(var(--k) * calc(9ms * var(--lt))) forwards,
+    launch-drop calc(240ms * var(--lt)) var(--ease-in-out) calc(330ms * var(--lt)) forwards;
+}
+.launch[data-variant='ring'].is-go .launch-name { animation: launch-brand-in calc(220ms * var(--lt)) var(--ease-out) calc(360ms * var(--lt)) forwards; }
+.launch.is-leaving .launch-ring b { transition: opacity calc(180ms * var(--lt)) var(--ease-out); opacity: 0; }
+
+/* Headline: Home's own line comes word by word over the wave, then lands where it lives on Home */
+.launch-head {
+  margin: 0; white-space: nowrap; transform-origin: 0 0;
+  font: 600 44.8px / 1.15 var(--font-display); letter-spacing: -0.015em; color: var(--text);
+}
+.launch-head span { display: inline-block; opacity: 0; transform: translateY(10px); }
+.launch-head .keep { color: var(--clean); }
+.launch[data-variant='headline'].is-go .launch-head span { animation: launch-brand-in calc(260ms * var(--lt)) var(--ease-out) calc(var(--w) * calc(45ms * var(--lt))) forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .launch.is-go .launch-ring i, .launch.is-go .launch-ring img, .launch.is-go .launch-name,
+  .launch.is-go .launch-head span, .launch.is-go .launch-scan { animation: none !important; }
+  .launch-ring b i { opacity: 1; transform: scaleY(var(--h)); }
+  .launch-ring b.is-music i { opacity: 0.3; transform: scaleY(0.1); }
+  .launch-ring img, .launch-name, .launch-head span { opacity: 1; transform: none; }
+}

@@ -9,8 +9,20 @@
     <link rel="stylesheet" href="./home.css" />
     <link rel="stylesheet" href="./player.css" />
     <link rel="stylesheet" href="./report.css" />
+    <link rel="stylesheet" href="./launch.css" />
   </head>
   <body>
+    <!-- Launch intro (launch.css / launch.js): the music falls away, the voices stay, then the logo flies home -->
+    <div class="launch" id="launch" aria-hidden="true">
+      <div class="launch-bg"></div>
+      <div class="launch-stage">
+        <span class="launch-wave"><i style="--h:0.3;--d:7"></i><i style="--h:0.55;--d:6"></i><i class="is-music" style="--h:0.95;--d:5"></i><i style="--h:0.4;--d:4"></i><i style="--h:0.7;--d:3"></i><i class="is-music" style="--h:1;--d:2"></i><i style="--h:0.5;--d:1"></i><i style="--h:0.85;--d:0"></i><i style="--h:0.45;--d:1"></i><i class="is-music" style="--h:0.9;--d:2"></i><i style="--h:0.6;--d:3"></i><i style="--h:0.35;--d:4"></i><i class="is-music" style="--h:1;--d:5"></i><i style="--h:0.5;--d:6"></i><i style="--h:0.25;--d:7"></i></span>
+        <div class="brand launch-brand">
+          <img src="./assets/naqi.png" alt="" />
+          <div class="brand-name">Naqi <span class="ar" lang="ar">نقي</span></div>
+        </div>
+      </div>
+    </div>
     <!-- Library (left side): every cleaned file, newest first -->
     <aside class="side" aria-label="Library">
       <div class="brand">
