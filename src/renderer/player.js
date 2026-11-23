@@ -4,6 +4,7 @@
 // sound: an own video's file (or a copy the browser can play, first part then full), or a link's stream.
 // Jumps go only inside the clean part (lit on the time bar).
 import { icon } from './design/icons.js'
+import { detailsButton } from './details.js'
 import * as pages from './pages.js'
 import { seg } from './seg.js'
 
@@ -21,7 +22,10 @@ audio.preload = 'auto'
 const video = $('#picture')
 const screen = $('#screen')
 const timebar = $('#timebar')
+const peek = $('#screen-peek')
 const tip = $('#timebar-tip')
+const lines = $('#timebar-lines')
+const span = $('#timebar-span')
 const playBtn = $('#player-play')
 const volume = $('#volume')
 
@@ -34,13 +38,16 @@ const p = {
   partS: 0,                          // length of a first-part copy
   converted: false,                  // a copy was asked for after the file did not play as it is
   note: '', noteTimer: 0,
-  dragging: false
+  dragging: false,
+  mutes: { parts: [], upto: 0 },     // where Naqi muted the sound (T10.2b), seconds; read up to `upto`
+  muteAsk: 0, muteBusy: false, muteAgain: false
 }
 
 // Measured by the self-test: start, sync of every shown frame, waits at the clean edge
 const stats = { firstPlaying: null, sync: [], waits: [], jumps: [] }
 window.naqiPlayerStats = () => ({ ...stats, now: performance.now(), at: audio.currentTime, using: p.using,
-  waiting: p.waiting, ready: p.ready, live: p.live, length: p.length })
+  waiting: p.waiting, ready: p.ready, live: p.live, length: p.length, mutes: p.mutes, id: p.id,
+  corner: !document.querySelector('#corner').hidden, paused: audio.paused, rate: audio.playbackRate, pitch: audio.preservesPitch })
 
 const clock = (s) => {
   s = Math.max(0, Math.floor(s || 0))
@@ -57,6 +64,8 @@ const cleanUpTo = () => (p.live ? p.ready : length())
 // Plays library item `id`; job: the running "Clean and play" job when it is this item. Throws the engine's
 // words: "again" when its cleaned sound is gone and it must be cleaned first.
 export async function open(id, job = null) {
+  // Already playing in the corner: back to it at the same moment
+  if (id === p.id && inCorner()) { showPage(true); return p.item }
   const item = await window.naqi.openPlayer(id)
   close({ keepPage: true })
   openSave(item.save, await window.naqi.getSettings())
@@ -66,6 +75,9 @@ export async function open(id, job = null) {
   $('#watch-title').textContent = item.title
   $('#watch-title').title = item.title
   screen.dataset.kind = item.kind
+  screen.removeAttribute('data-bar-instant')
+  screen.dataset.bar = 'shown'
+  wokeAt = performance.now()
   showNote('')
   audio.src = `${MEDIA}/${id}/sound`
   audio.volume = Number(volume.value)
@@ -73,6 +85,9 @@ export async function open(id, job = null) {
   // The cleaning may have ended while this item was being opened: its "done" event came before p.id was set
   if (item.live && finished.has(id)) { p.live = false; sv.info.ready = sv.info.can }
   setPicture(item.picture)
+  p.mutes = { parts: [], upto: 0 }
+  drawMutes()
+  loadMutes()
   drawSave()
   audio.play().catch(() => { /* a later play() or Pause wins; the button shows the real state */ })
   draw()
@@ -83,6 +98,11 @@ export async function open(id, job = null) {
 export function close({ keepPage = false, instant = false } = {}) {
   if (p.id === null) { if (!keepPage) showPage(false, instant); return }
   p.id = null
+  setCorner(false)
+  p.mutes = { parts: [], upto: 0 }
+  drawMutes()
+  setKeys(false, { instant: true })
+  setGear(false, { instant: true })
   audio.pause()
   audio.removeAttribute('src')
   audio.load()
@@ -91,6 +111,9 @@ export function close({ keepPage = false, instant = false } = {}) {
 }
 
 export const openId = () => p.id
+export const inCorner = () => !corner.hidden
+// The report page's moment is about what was just heard (Bad rating): the item waits, paused, in the corner
+export function pause() { audio.pause() }
 
 // Off: back to Home, only when the player is the page shown (closing it from another page leaves that page)
 function showPage(on, instant = false) {
@@ -99,7 +122,66 @@ function showPage(on, instant = false) {
   pages.show(on ? 'player' : 'home', { id: p.id }, { instant })
   if (on && before !== 'player') playBtn.focus({ preventScroll: true })
 }
-$('#watch-back').addEventListener('click', () => close())
+// Back (and Escape), or the miniplayer button (I), leaves the item playing in the corner
+$('#watch-back').addEventListener('click', () => showPage(false))
+$('#mini-toggle').addEventListener('click', () => showPage(false))
+
+// ---------- Keep playing in a corner (ROADMAP T10.2c) ----------
+// Whenever another page shows while an item is open, the corner holds it: the same <audio> goes on, the <video> moves
+// into the corner (moved in one step, so the browser does not pause it) and the same sync keeps it with the sound.
+// A click on the picture (or a sound's title) returns to the full player at the same moment; Stop closes it.
+const corner = $('#corner')
+const cornerPic = $('#corner-pic')
+const cornerPlay = $('#corner-play')
+function setCorner(on, instant = false) {
+  if (on === inCorner()) return
+  corner.getAnimations().forEach((a) => a.cancel())
+  corner.classList.remove('is-entering', 'is-leaving')
+  if (on) {
+    cornerPic.append(video)
+    $('#corner-title').textContent = p.item.title
+    corner.title = p.item.title
+    corner.hidden = false
+    if (!instant) { void corner.offsetWidth; corner.classList.add('is-entering') }
+  } else {
+    screen.prepend(video)
+    corner.hidden = true
+  }
+  settleUntil = performance.now() + 1000   // the move itself may cost a frame: not counted as sync
+  drawCorner()
+}
+window.addEventListener('naqi-page', (e) => {
+  if (e.detail.page !== 'player') setKeys(false, { instant: true })
+  setGear(false, { instant: true })   // it belongs to where it was opened (the screen or the corner)
+  setCorner(e.detail.page !== 'player' && p.id !== null, e.detail.instant)
+})
+$('#corner-open').addEventListener('click', () => showPage(true))
+$('#corner-title').addEventListener('click', () => { if (screen.dataset.kind === 'audio') showPage(true) })
+cornerPlay.addEventListener('click', toggle)
+$('#corner-close').addEventListener('click', () => {
+  // A short fade, then gone (the sound stops at once)
+  audio.pause()
+  corner.classList.remove('is-entering')
+  corner.classList.add('is-leaving')
+})
+corner.addEventListener('animationend', (e) => { if (e.target === corner && corner.classList.contains('is-leaving')) close() })
+// Only one sound at a time: the report page's strip pauses this one, and this one pauses the strip (strip.js)
+window.addEventListener('naqi-strip-play', () => audio.pause())
+audio.addEventListener('play', () => window.dispatchEvent(new CustomEvent('naqi-player-play')))
+
+function drawCorner() {
+  if (!inCorner()) return
+  for (const k of ['kind', 'picture', 'waiting']) if (corner.dataset[k] !== screen.dataset[k]) corner.dataset[k] = screen.dataset[k] ?? ''
+  const len = length()
+  const peek = corner.querySelector('.corner-peek')
+  peek.style.setProperty('--played', len ? Math.min(1, audio.currentTime / len) : 0)
+  peek.style.setProperty('--cleaned', p.live ? (len ? Math.min(1, p.ready / len) : 0) : 1)
+  const playing = !audio.paused && !audio.ended
+  if (cornerPlay.getAttribute('aria-pressed') !== String(playing)) {
+    cornerPlay.setAttribute('aria-pressed', playing)
+    setTip(cornerPlay, playing ? 'Pause' : 'Play')
+  }
+}
 
 // ---------- The picture ----------
 function setPicture(desc) {
@@ -191,11 +273,14 @@ let settleUntil = 0
 let integ = 0
 function onFrame(_now, meta) {
   if (p.using && !video.paused && soundPlays()) {
-    const a = audio.currentTime + (meta.expectedDisplayTime - performance.now()) / 1000
+    // At another speed (T10.5) the sound moves `rate` seconds a second, and the picture's own speed is that rate
+    // nudged the same way
+    const rate = audio.playbackRate
+    const a = audio.currentTime + rate * (meta.expectedDisplayTime - performance.now()) / 1000
     const err = meta.mediaTime - a
     if (performance.now() > settleUntil) stats.sync.push([+a.toFixed(3), +err.toFixed(4)])
     if (Math.abs(err) > SYNC_JUMP_S) {
-      video.currentTime = a + 0.03
+      video.currentTime = a + 0.03 * rate
       settleUntil = performance.now() + 2000
       integ = 0
     } else {
@@ -204,7 +289,7 @@ function onFrame(_now, meta) {
       // 0.3 s instead of a second; once close, ±10% keeps it there without visible speed changes
       integ = Math.max(-0.5, Math.min(0.5, integ + err / 30))
       const span = Math.abs(err) > SYNC_FAR_S ? 0.3 : 0.1
-      video.playbackRate = Math.max(1 - span, Math.min(1 + span, 1 - err * (Math.abs(err) > SYNC_FAR_S ? 4 : 1.5) - integ))
+      video.playbackRate = rate * Math.max(1 - span, Math.min(1 + span, 1 - err * (Math.abs(err) > SYNC_FAR_S ? 4 : 1.5) - integ))
     }
     if (p.using === 'part' && a > p.partS - 0.3) {   // past the first-part copy: wait for the full one
       video.pause()
@@ -263,6 +348,8 @@ playBtn.addEventListener('click', toggle)
 // (main.js). The player stays loaded, so Back on the report comes back to this same moment.
 $('#report-here').addEventListener('click', () => {
   if (p.id === null) return
+  setGear(false, { instant: true })
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
   audio.pause()
   window.dispatchEvent(new CustomEvent('naqi-report-here', { detail: { id: p.id, at: audio.currentTime } }))
 })
@@ -281,6 +368,7 @@ function jump(to) {
   draw()
 }
 
+const TIP_ROOM = 12   // px the time tip may stick out past the time bar's ends (the bar's side padding is 16)
 const fracAt = (e) => {
   const r = timebar.getBoundingClientRect()
   return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
@@ -290,11 +378,17 @@ timebar.addEventListener('pointermove', (e) => {
   if (!len) return
   const f = fracAt(e)
   const blocked = p.live && f * len > p.ready
-  tip.style.left = `${f * 100}%`
+  const part = p.dragging ? null : mutedAt(f * timebar.clientWidth)
+  showSpan(part)
   tip.dataset.blocked = blocked
-  tip.textContent = blocked ? `${clock(f * len)} · not clean yet` : clock(f * len)
+  tip.textContent = blocked ? `${clock(f * len)} · not clean yet` : part ? `Muted ${clock(part[0])} – ${clock(part[1])}` : clock(f * len)
+  // Centred on the pointer, but never past the screen's edge (the bar sits inside it)
+  const w = timebar.clientWidth
+  const half = tip.offsetWidth / 2
+  tip.style.left = `${Math.min(w + TIP_ROOM - half, Math.max(half - TIP_ROOM, f * w))}px`
   if (p.dragging) drawTime(Math.min(f * len, cleanUpTo()))
 })
+timebar.addEventListener('pointerleave', () => showSpan(null))
 timebar.addEventListener('pointerdown', (e) => {
   if (!length()) return
   timebar.setPointerCapture(e.pointerId)
@@ -307,12 +401,6 @@ timebar.addEventListener('pointerup', (e) => {   // the jump comes on release (o
   p.dragging = false
   timebar.classList.remove('is-dragging')
   jump(fracAt(e) * length())
-})
-timebar.addEventListener('keydown', (e) => {
-  const step = e.key === 'ArrowRight' ? 5 : e.key === 'ArrowLeft' ? -5 : 0
-  if (!step) return
-  e.preventDefault()
-  jump(audio.currentTime + step)
 })
 
 // Volume and mute, remembered
@@ -330,6 +418,22 @@ volume.addEventListener('input', () => {
 })
 volume.addEventListener('change', () => window.naqi.setSettings({ volume: volume.value }))
 function toggleMute() { audio.muted = !audio.muted; showVolume() }
+// Up / Down keys: 5% a press (like YouTube); turning it up unmutes; remembered once the presses stop
+const VOLUME_STEP = 0.05
+let volumeSaveTimer = 0
+let volumeShowTimer = 0
+const volumeGroup = $('#volume-group')
+function stepVolume(d) {
+  volume.value = Math.min(1, Math.max(0, Number(volume.value) + d)).toFixed(2)
+  audio.volume = Number(volume.value)
+  if (audio.muted && d > 0) audio.muted = false
+  showVolume()
+  volumeGroup.classList.add('is-open')
+  clearTimeout(volumeShowTimer)
+  volumeShowTimer = setTimeout(() => volumeGroup.classList.remove('is-open'), 1200)
+  clearTimeout(volumeSaveTimer)
+  volumeSaveTimer = setTimeout(() => window.naqi.setSettings({ volume: volume.value }), 500)
+}
 $('#mute').addEventListener('click', toggleMute)
 export function setVolume(value) {
   if (value !== undefined && value !== null && value !== '') volume.value = value
@@ -337,16 +441,236 @@ export function setVolume(value) {
   showVolume()
 }
 
-// Space: play / pause, M: mute (old Naqi), Escape: back, while the player is open and no other control takes the key
+// Fullscreen (F, its button or a double click on the picture): the screen alone. The browser leaves it on Escape by
+// itself; that Escape must not also close the player.
+const fullBtn = $('#full-toggle')
+let leftFullAt = 0
+document.addEventListener('fullscreenchange', () => {
+  const on = !!document.fullscreenElement
+  // Escape there is the browser's: it leaves fullscreen and closes the settings menu with it (like YouTube)
+  if (!on) { leftFullAt = performance.now(); setGear(false, { instant: true }) }
+  fullBtn.setAttribute('aria-pressed', on)
+  setTip(fullBtn, on ? 'Leave fullscreen (F)' : 'Fullscreen (F)')
+})
+function toggleFull() {
+  if (document.fullscreenElement) return document.exitFullscreen().catch((err) => console.warn('[naqi] fullscreen:', err.message))
+  setKeys(false, { instant: true })
+  screen.requestFullscreen().catch((err) => console.warn('[naqi] fullscreen:', err.message))
+}
+fullBtn.addEventListener('click', toggleFull)
+// Not on the bar or the settings menu; a click that only closed the menu does nothing more (like YouTube)
+const onPicture = (e) => !bar.contains(e.target) && !gearMenu.contains(e.target) && performance.now() - gearClosedAt > 400
+screen.addEventListener('dblclick', (e) => { if (onPicture(e)) toggleFull() })
+// One click on the picture pauses or plays (like YouTube: a double click's two clicks cancel out)
+screen.addEventListener('click', (e) => { if (onPicture(e)) toggle() })
+const setTip = (btn, text) => { btn.setAttribute('aria-label', text); btn.dataset.tip = text }
+
+// Theater mode (T, its button): the player wide, the library hidden; only while the player shows, remembered
+const theaterBtn = $('#theater-toggle')
+let theater = false
+export function setTheater(on, { save = false } = {}) {
+  theater = on
+  theaterBtn.setAttribute('aria-pressed', on)
+  setTip(theaterBtn, on ? 'Default view (T)' : 'Theater mode (T)')
+  document.body.toggleAttribute('data-theater', on && pages.shown() === 'player')
+  if (save) window.naqi.setSettings({ theater: on ? '1' : '0' })
+}
+theaterBtn.addEventListener('click', () => setTheater(!theater, { save: true }))
+window.addEventListener('naqi-page', (e) => document.body.toggleAttribute('data-theater', theater && e.detail.page === 'player'))
+
+// The keys card: the keys button or ? opens it; a click outside, the button again, ? or Escape closes it
+const keysCard = $('#keys-card')
+const keysToggle = $('#keys-toggle')
+const keysOpen = () => keysCard.matches(':popover-open')
+function setKeys(open, { instant = false } = {}) {
+  if (open === keysOpen()) return
+  keysCard.toggleAttribute('data-instant', instant)
+  if (open) { setGear(false, { instant: true }); keysCard.showPopover() } else keysCard.hidePopover()
+  keysToggle.setAttribute('aria-expanded', open)
+}
+keysToggle.addEventListener('click', () => setKeys(!keysOpen()))
+document.addEventListener('pointerdown', (e) => {
+  if (keysOpen() && !keysCard.contains(e.target) && !keysToggle.contains(e.target)) setKeys(false)
+})
+// A key pressed while the card is open lights up on it, so the list answers what the hand just did
+function lightKey(k) {
+  if (!keysOpen()) return
+  for (const cap of keysCard.querySelectorAll(`kbd[data-k~="${CSS.escape(k)}"]`)) {
+    cap.classList.add('is-lit')
+    clearTimeout(cap.litTimer)
+    cap.litTimer = setTimeout(() => cap.classList.remove('is-lit'), 180)
+  }
+}
+
+// ---------- Settings (ROADMAP T10.5) ----------
+// The gear opens a small menu like YouTube's: a list of settings, each opening its own list in the same card (Back
+// returns). It lives in the screen (so it stays in fullscreen) and moves into the corner with the picture. Keys: the
+// arrows move in it, Right / Enter open, Left goes back, Escape closes; a click outside closes it.
+const gearMenu = $('#gear-menu')
+const gearButtons = [$('#gear-toggle'), $('#corner-gear')]
+const gearDot = $('.gear-dot')
+let gearClosedAt = 0   // a click outside closed it: that click does nothing else
+const gearOpen = () => gearMenu.dataset.open === 'true'
+const gearPanel = (name = gearMenu.dataset.panel) => gearMenu.querySelector(`.gear-panel[data-name="${name}"]`)
+// The card takes the shown list's full height (borders included; a small screen caps it and the list scrolls),
+// animated only between two lists
+function sizeGear(animate) {
+  gearMenu.toggleAttribute('data-sizing', !animate)
+  gearMenu.style.setProperty('--h', `${gearPanel().scrollHeight + 2}px`)
+}
+function setGear(open, { instant = false } = {}) {
+  if (open === gearOpen()) return
+  const opener = inCorner() ? $('#corner-gear') : $('#gear-toggle')
+  gearMenu.toggleAttribute('data-instant', instant)
+  if (open) {
+    setKeys(false, { instant: true })
+    ;(inCorner() ? corner : screen).append(gearMenu)
+    gearMenu.dataset.panel = 'main'
+    $('#gear-report-value').textContent = clock(audio.currentTime || 0)
+    gearMenu.inert = false
+    sizeGear(false)
+    void gearMenu.offsetWidth
+    gearMenu.dataset.open = 'true'
+    gearPanel().querySelector('.gear-item').focus({ preventScroll: true })
+  } else {
+    const hadFocus = gearMenu.contains(document.activeElement)
+    gearMenu.dataset.open = 'false'
+    gearMenu.inert = true
+    if (hadFocus && opener.offsetWidth) opener.focus({ preventScroll: true })
+  }
+  for (const b of gearButtons) b.setAttribute('aria-expanded', open && b === opener)
+}
+function showGearPanel(name) {
+  const from = gearMenu.dataset.panel
+  gearMenu.dataset.panel = name
+  sizeGear(true)
+  if (name === 'speed') placeDot(true)
+  const target = name === 'main' ? gearPanel().querySelector(`[data-go="${from}"]`)
+    : gearPanel().querySelector('[aria-checked="true"]') || gearPanel().querySelector('.gear-item')
+  target.focus({ preventScroll: true })
+  // A small screen caps the card and the list scrolls: the chosen one is brought into sight once the card has its height
+  setTimeout(() => {
+    const pnl = gearPanel()
+    const below = target.getBoundingClientRect().bottom - pnl.getBoundingClientRect().bottom + 6
+    if (below > 0) pnl.scrollTop += below
+  }, 240)
+}
+for (const b of gearButtons) b.addEventListener('click', () => setGear(!gearOpen()))
+gearMenu.addEventListener('click', (e) => {
+  const item = e.target.closest('.gear-item')
+  if (!item) return
+  if (item.dataset.go) return showGearPanel(item.dataset.go)
+  if (item.dataset.speed) {
+    setSpeed(Number(item.dataset.speed))
+    // The dot slides to the new speed, then the list goes back to the settings, which show the new value
+    setTimeout(() => { if (gearOpen() && gearMenu.dataset.panel === 'speed') showGearPanel('main') }, 260)
+  }
+})
+gearMenu.addEventListener('keydown', (e) => {
+  const items = [...gearPanel().querySelectorAll('.gear-item')].filter((b) => b.getClientRects().length && !b.disabled)
+  const i = items.indexOf(document.activeElement)
+  const k = e.key
+  if (k === 'ArrowDown' || k === 'ArrowUp') items[(i + (k === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus()
+  else if (k === 'Home' || k === 'End') items.at(k === 'Home' ? 0 : -1).focus()
+  else if (k === 'ArrowRight' && items[i]?.dataset.go && gearMenu.dataset.panel === 'main') showGearPanel(items[i].dataset.go)
+  else if ((k === 'ArrowLeft' || k === 'Backspace') && gearMenu.dataset.panel !== 'main') showGearPanel('main')
+  else if (k === 'Escape') setGear(false, { instant: true })
+  else if (k === 'Tab') return setGear(false)
+  else return
+  e.preventDefault()
+  e.stopPropagation()
+})
+document.addEventListener('pointerdown', (e) => {
+  if (gearOpen() && !gearMenu.contains(e.target) && !gearButtons.some((b) => b.contains(e.target))) {
+    gearClosedAt = performance.now()
+    setGear(false)
+  }
+})
+
+// Speed 0.5x to 2x: the voice keeps its natural pitch (the browser stretches the sound), the picture follows the
+// sound at the same rate (onFrame). Kept while Naqi is open, for the next item too (like YouTube), not after a restart.
+audio.preservesPitch = true
+let speed = 1
+function placeDot(instant = false) {
+  const on = $('#gear-speeds [aria-checked="true"]')
+  gearDot.toggleAttribute('data-instant', instant)
+  gearDot.style.setProperty('--y', `${on.offsetTop}px`)
+}
+function setSpeed(r) {
+  speed = r
+  audio.defaultPlaybackRate = r
+  audio.playbackRate = r
+  video.defaultPlaybackRate = r
+  video.playbackRate = r
+  settleUntil = performance.now() + 1000
+  integ = 0
+  for (const b of $('#gear-speeds').querySelectorAll('[data-speed]')) b.setAttribute('aria-checked', Number(b.dataset.speed) === r)
+  placeDot()
+  const value = $('#gear-speed-value')
+  value.textContent = r === 1 ? 'Normal' : `${r}x`
+  value.classList.remove('is-swapping')
+  void value.offsetWidth
+  value.classList.add('is-swapping')
+}
+setSpeed(1)
+window.naqiSpeed = () => speed
+
+// Keys while the player is open and no other control takes the key (ROADMAP T10.1): Space / K play / pause,
+// M mute (old Naqi), Up / Down volume, Left / Right 5 s, Shift + arrows and J / L 10 s (like YouTube), F fullscreen,
+// T theater mode, I miniplayer (the corner), ? the keys card,
+// Escape back.
+// Jumps go through jump(), so they stay inside the clean part like the time bar. A text box keeps its keys.
+const STEP_S = 5
+const BIG_STEP_S = 10
 document.addEventListener('keydown', (e) => {
   if (p.id === null || $('#watch').hidden || e.ctrlKey || e.altKey || e.metaKey || e.defaultPrevented) return
   const el = document.activeElement
-  const typing = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')
-  if (e.key === ' ' && !typing && !(el && el.tagName === 'BUTTON')) { e.preventDefault(); toggle() }
-  else if ((e.key === 'm' || e.key === 'M') && !typing) toggleMute()
-  // Escape: the Save row closes first, then the player goes back to Home (at once: it came from a key)
-  else if (e.key === 'Escape' && saveToggle.getAttribute('aria-expanded') === 'true') { setSaveOpen(false); saveToggle.focus() }
-  else if (e.key === 'Escape') close({ instant: true })
+  if (el && (el.tagName === 'TEXTAREA' || el.isContentEditable)) return
+  const isInput = el && el.tagName === 'INPUT'
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
+  wake(true)
+  if (key === 'Escape') {
+    // Fullscreen ends first (the browser does it), then the keys card and the Save row close, then the player goes
+    // back to Home (at once: it came from a key)
+    if (document.fullscreenElement) return toggleFull()
+    if (performance.now() - leftFullAt < 500) return
+    if (keysOpen()) { lightKey('esc'); return setKeys(false, { instant: true }) }
+    if (saveToggle.getAttribute('aria-expanded') === 'true') { setSaveOpen(false); $('#gear-toggle').focus() }
+    else showPage(false, true)
+    return
+  }
+  if (isInput && el.type !== 'range') return   // typing in a box
+  if (key === '?') {
+    if (document.fullscreenElement) return
+    lightKey('?')
+    return setKeys(!keysOpen(), { instant: true })
+  }
+  // The volume slider and the Save choices use their own arrows
+  const ownArrows = isInput || (el && el.closest('.seg'))
+  if ((key === 'ArrowUp' || key === 'ArrowDown') && !ownArrows) {
+    e.preventDefault()
+    lightKey(key === 'ArrowUp' ? 'up' : 'down')
+    return stepVolume(key === 'ArrowUp' ? VOLUME_STEP : -VOLUME_STEP)
+  }
+  if (key === 'ArrowLeft' || key === 'ArrowRight') {
+    if (ownArrows) return
+    e.preventDefault()
+    const step = (e.shiftKey ? BIG_STEP_S : STEP_S) * (key === 'ArrowRight' ? 1 : -1)
+    lightKey(`${e.shiftKey ? 'shift-' : ''}${key === 'ArrowRight' ? 'right' : 'left'}`)
+    return jump(audio.currentTime + step)
+  }
+  if (e.shiftKey) return
+  if (key === ' ' && !(el && el.tagName === 'BUTTON')) { e.preventDefault(); lightKey('space'); return toggle() }
+  if (key.length !== 1 || !'kjlmfti'.includes(key)) return
+  if ((key === 't' || key === 'i') && document.fullscreenElement) return   // their buttons are out of sight there too
+  lightKey(key)
+  if (key === 'k') toggle()
+  else if (key === 'j') jump(audio.currentTime - BIG_STEP_S)
+  else if (key === 'l') jump(audio.currentTime + BIG_STEP_S)
+  else if (key === 'm') toggleMute()
+  else if (key === 'f') toggleFull()
+  else if (key === 't') setTheater(!theater, { save: true })
+  else if (key === 'i') { e.preventDefault(); showPage(false, true) }   // its letter must not land in Home's link box
 })
 
 // ---------- The item still being cleaned ----------
@@ -356,11 +680,88 @@ window.naqi.onJob((j) => {
   else if (j.kind === 'play' && j.row_id) finished.delete(j.row_id)   // cleaned again
   if (j.kind !== 'play' || j.row_id !== p.id || p.id === null) return
   if (j.total_s) p.length = j.total_s
-  if (j.state === 'running') { p.ready = Math.max(p.ready, j.ready_s || 0); return draw() }
-  if (j.state === 'done') { p.live = false; if (sv.info) sv.info.ready = sv.info.can; drawSave(); return draw() }
+  if (j.state === 'running') {
+    if ((j.ready_s || 0) > p.ready) loadMutes()   // a new part is clean: its muted parts show
+    p.ready = Math.max(p.ready, j.ready_s || 0)
+    return draw()
+  }
+  if (j.state === 'done') { p.live = false; loadMutes(); if (sv.info) sv.info.ready = sv.info.can; drawSave(); return draw() }
   // Cancelled or failed: its cleaned sound is gone with it (Home tells why)
   close()
 })
+
+// ---------- Where the music was removed (ROADMAP T10.2b) ----------
+// The engine reads where the cleaned sound was muted (exact silence, the same sound the report page's strip shows);
+// they pinch the time bar to a hairline, like the strip's flat gaps. While the item is cleaned, each newly clean part
+// adds its own. Hovering one brackets it and the tip gives its times.
+const MUTE_HIT_PX = 3        // a short part is found this far from its pinch
+const MUTE_MIN_PX = 2        // and is drawn at least this wide
+async function loadMutes() {
+  if (p.id === null) return
+  if (p.muteBusy) { p.muteAgain = true; return }
+  const id = p.id
+  p.muteBusy = true
+  try {
+    const m = await window.naqi.mutedParts(id)
+    if (p.id === id) { p.mutes = m; drawMutes() }
+  } catch (e) {
+    console.warn('[naqi] muted parts:', cleanError(e))
+  } finally {
+    p.muteBusy = false
+    if (p.muteAgain) { p.muteAgain = false; loadMutes() }
+  }
+}
+
+// The parts in px of the time bar, short ones widened around their middle
+function mutePx() {
+  const len = length()
+  const w = lines.clientWidth
+  if (!len || !w) return []
+  return p.mutes.parts.map(([a, b]) => {
+    const x0 = (a / len) * w
+    const x1 = (b / len) * w
+    const grow = Math.max(0, MUTE_MIN_PX - (x1 - x0)) / 2
+    return [x0 - grow, x1 + grow, a, b]
+  })
+}
+
+let muteKey = ''
+function drawMutes() {
+  const w = lines.clientWidth
+  const key = `${w}|${length()}|${p.mutes.parts.length}|${p.mutes.parts.at(-1)?.[1]}`
+  if (key === muteKey) return
+  muteKey = key
+  const px = mutePx()
+  if (!px.length) return lines.style.removeProperty('--muted-mask')
+  // Full height between the parts (rounded ends, so each pinch narrows softly), a thin line all along
+  let d = ''
+  let x = 0
+  for (const [x0, x1] of [...px, [w, w]]) {
+    if (x0 > x) d += `<rect x="${x.toFixed(1)}" y="0" width="${(x0 - x).toFixed(1)}" height="10" rx="2.5" ry="5"/>`
+    x = Math.max(x, x1)
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} 10" preserveAspectRatio="none">` +
+    `<rect x="0" y="3.6" width="${w}" height="2.8"/>${d}</svg>`
+  lines.style.setProperty('--muted-mask', `url("data:image/svg+xml,${encodeURIComponent(svg)}")`)
+}
+new ResizeObserver(() => drawMutes()).observe(lines)
+audio.addEventListener('durationchange', () => drawMutes())
+
+const mutedAt = (x) => {
+  const hit = mutePx().find(([x0, x1]) => x >= x0 - MUTE_HIT_PX && x <= x1 + MUTE_HIT_PX)
+  return hit ? [hit[2], hit[3]] : null
+}
+let spanOn = null
+function showSpan(part) {
+  if (part?.[0] === spanOn?.[0]) return
+  spanOn = part
+  span.dataset.on = Boolean(part)
+  if (!part) return
+  const [x0, x1] = mutePx().find(([, , a]) => a === part[0])
+  const w = Math.max(10, x1 - x0 + 6)
+  span.style.left = `${(x0 + x1) / 2 - w / 2}px`
+  span.style.width = `${w}px`
+}
 
 // ---------- Save (ROADMAP T4.3, old SPEC R14e) ----------
 // Optional and last: the item's cleaned sound becomes an MP3 or MP4 in the Save to day folder, nothing is cleaned
@@ -393,6 +794,8 @@ function setSaveOpen(open) {
 }
 saveToggle.addEventListener('click', () => {
   const open = saveToggle.getAttribute('aria-expanded') !== 'true'
+  setGear(false, { instant: true })
+  if (open && document.fullscreenElement) document.exitFullscreen().catch(() => {})   // the Save row is under the screen
   setSaveOpen(open)
   if (open) saveGo.focus({ preventScroll: true })
 })
@@ -402,6 +805,10 @@ function setSaveStatus(text, state = '') {
   if (el.textContent !== text) el.textContent = text
   el.dataset.state = state
   el.title = text
+  // A failed Save can be reported: Copy details puts it on the clipboard with the versions
+  const details = $('#save-details')
+  if (state === 'error') details.replaceChildren(detailsButton({ where: `Player, Save as ${saveFmt.value().toUpperCase()}`, title: 'Save failed', text }, { small: true }))
+  details.hidden = state !== 'error'
 }
 
 function drawSave() {
@@ -413,6 +820,7 @@ function drawSave() {
   saveToggle.hidden = !info.can
   saveToggle.disabled = !ready && !mine
   saveToggle.dataset.tip = ready || mine ? 'Save it as an MP3 or MP4 file' : p.live ? 'Save is ready when all of it is clean' : info.why
+  $('#gear-save-value').textContent = mine ? 'saving…' : ready ? 'MP3 or MP4' : p.live ? 'when all is clean' : 'not now'
   if (!ready && !mine) setSaveOpen(false)
   const saved = info.saved.at(-1)
   $('#save-show').hidden = !saved
@@ -468,6 +876,41 @@ window.naqi.onSave((s) => {
   drawSave()
 })
 
+// ---------- The bar on the picture (ROADMAP T10.1b) ----------
+// Like YouTube: while the picture plays, the bar hides a moment after the mouse stops and comes back when the mouse
+// moves over the screen or a key is pressed. It stays while anything needs it: paused or ended, waiting at the clean
+// edge, a sound only (no picture to uncover), the time bar dragged, the mouse on the bar, the Save row or the keys card
+// open. Keyboard focus on a control does not hold it (it stayed for good after a key in fullscreen); a key wakes it.
+const BAR_IDLE_MS = 3000
+const bar = $('#screen-bar')
+let wokeAt = 0
+let lastMove = ''
+function wake(instant = false) {
+  wokeAt = performance.now()
+  if (screen.dataset.bar === 'hidden') {
+    screen.toggleAttribute('data-bar-instant', instant)   // from a key: at once, a key should not wait for motion
+    screen.dataset.bar = 'shown'
+  }
+}
+// The browser also sends a move when the page changes under a still mouse: only a real move counts
+screen.addEventListener('pointermove', (e) => {
+  const at = `${e.screenX},${e.screenY},${e.clientX},${e.clientY}`
+  if (at !== lastMove) { lastMove = at; wake() }
+})
+screen.addEventListener('pointerdown', () => wake())
+screen.addEventListener('pointerleave', () => { if (!barNeeded()) wokeAt = -Infinity })   // the mouse left: hide now
+bar.addEventListener('focusin', () => wake())
+const barNeeded = () => screen.dataset.kind !== 'video' || audio.paused || audio.ended || p.waiting || p.dragging ||
+  bar.matches(':hover') || keysOpen() || gearOpen() || saveToggle.getAttribute('aria-expanded') === 'true'
+function drawBar() {
+  const now = performance.now()
+  if (barNeeded()) wokeAt = Math.max(wokeAt, now)   // the wait starts once nothing holds the bar any more
+  const state = now - wokeAt > BAR_IDLE_MS ? 'hidden' : 'shown'
+  if (screen.dataset.bar === state) return
+  if (state === 'hidden') screen.removeAttribute('data-bar-instant')
+  screen.dataset.bar = state
+}
+
 // ---------- Drawing ----------
 function showNote(text, error = false) {
   clearTimeout(p.noteTimer)
@@ -490,7 +933,9 @@ function metaText() {
 
 function drawTime(at) {
   const len = length()
-  timebar.style.setProperty('--played', len ? Math.min(1, at / len) : 0)
+  const played = len ? Math.min(1, at / len) : 0
+  timebar.style.setProperty('--played', played)
+  peek.style.setProperty('--played', played)
   $('#t-now').textContent = clock(at)
   timebar.setAttribute('aria-valuenow', Math.round(at))
   timebar.setAttribute('aria-valuetext', `${clock(at)} of ${clock(len)}`)
@@ -501,7 +946,9 @@ function draw() {
   const len = length()
   const clean = p.live ? (len ? Math.min(1, p.ready / len) : 0) : 1
   timebar.style.setProperty('--cleaned', clean)
+  peek.style.setProperty('--cleaned', clean)
   timebar.dataset.cleaning = p.live
+  drawMutes()
   timebar.setAttribute('aria-valuemax', Math.round(len))
   if (!p.dragging) drawTime(audio.currentTime)
   $('#t-len').textContent = clock(len)
@@ -515,11 +962,13 @@ function draw() {
   }
   screen.dataset.waiting = p.live && p.waiting
   $('#watch-meta').textContent = metaText()
+  drawBar()
+  drawCorner()
 }
 
-// The time moves smoothly while the player is open
+// The time moves smoothly while the player is open (in its page or in the corner)
 function frame() {
-  if (p.id !== null && !$('#watch').hidden) draw()
+  if (p.id !== null && (!$('#watch').hidden || inCorner())) draw()
   requestAnimationFrame(frame)
 }
 requestAnimationFrame(frame)

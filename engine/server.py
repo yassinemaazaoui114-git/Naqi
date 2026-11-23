@@ -3,11 +3,12 @@ Listens only on 127.0.0.1, on a port the system picks, and answers only requests
 gave it in the NAQI_TOKEN environment variable. Standard library only, so it adds nothing to install.
 On start it prints one line to stdout: {"port": <port>}. It stops on POST /shutdown, and by itself when the
 Electron process (NAQI_PARENT_PID) ends, so it never outlives the window.
-Routes: GET /health (state, and the yt-dlp version in use), GET /gpu (graphics card), GET /events (event stream, server-sent events),
+Routes: GET /health (state, the yt-dlp and Python versions in use), GET /gpu (graphics card), GET /events (event stream, server-sent events),
 POST /jobs (start a cleaning job, JSON body as in jobs.Jobs.start), GET /jobs/<id>, POST /jobs/<id>/cancel,
 POST /kinds (audio or video per file), POST /pictures (a video's picture for the player, body as in picture.Pictures.start), GET /pictures/<id>,
 POST /pictures/<id>/cancel, GET /library (the side bar's items), POST /library/<id>/remove, POST /library/<id>/rate,
-GET /library/<id>/wave (the shape of its cleaned sound, for the report page's sound strip).
+GET /library/<id>/wave (the shape of its cleaned sound, for the report page's sound strip), GET /library/<id>/muted
+(where it was muted, for the player's time bar; while it is cleaned, the clean part).
 Save (saves.py): POST /library/<id>/save ({fmt, size, kbps, out}: MP3 / MP4 from its cleaned sound), GET /saves/<id>,
 POST /saves/<id>/cancel.
 Report a slip (cases.py): GET /cases (how many are saved), POST /cases/source ({row} or {path}: what the report is
@@ -21,6 +22,7 @@ import ctypes
 import hmac
 import json
 import os
+import platform
 import queue
 import sys
 import threading
@@ -138,7 +140,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._allowed():
             return
         if self.path == "/health":
-            self._json({**_state, "ytdlp": ytdlp_update.version()})
+            self._json({**_state, "ytdlp": ytdlp_update.version(), "python": platform.python_version()})
         elif self.path == "/gpu":
             self._json(_gpu)
         elif self.path == "/events":
@@ -156,6 +158,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"items": library.items(_live_id())})
         elif self._job_path("library") and self._job_path("library")[1] == "wave":
             self._wave(self._job_path("library")[0])
+        elif self._job_path("library") and self._job_path("library")[1] == "muted":
+            self._muted(self._job_path("library")[0])
         elif self.path == "/cases":
             self._json({"count": len(cases.read_cases())})
         elif self.path.startswith("/media/"):
@@ -248,6 +252,15 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": str(e)}, 409)
         except Exception:
             self._json({"error": "The cleaned sound could not be read. Type the times below."}, 500)
+
+    def _muted(self, row_id):
+        """The player's time bar: where row's cleaned sound was muted (read on this thread)."""
+        try:
+            self._json(_player.muted(row_id, _jobs.get(_jobs.job["id"]) if _jobs.job else None))
+        except ValueError as e:
+            self._json({"error": str(e)}, 409)
+        except Exception:
+            self._json({"error": "The muted parts could not be read."}, 500)
 
     def _media(self, parts):
         """The page's <audio> / <video> read these (through Electron, which adds the token)."""

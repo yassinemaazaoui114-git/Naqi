@@ -42,6 +42,9 @@ contextBridge.exposeInMainWorld('naqi', {
   // The sound strip: the shape of a library item's cleaned sound -> { length, peaks: [0..1] } (it plays from
   // naqi-media://engine/<id>/sound); throws the page's words when Naqi has no cleaned sound of it
   slipWave: (id) => ipcRenderer.invoke('cases-wave', id),
+  // The player's time bar: where a library item was muted -> { upto, parts: [[from, to], ...] } (seconds; while it
+  // is cleaned, up to the clean part)
+  mutedParts: (id) => ipcRenderer.invoke('player-muted', id),
   chooseFile: () => ipcRenderer.invoke('choose-file'),             // one file -> [path] or []
   // Home page helpers
   fileKinds: (paths) => ipcRenderer.invoke('file-kinds', paths),   // -> { kinds: { path: 'audio' | 'video' } }
@@ -51,5 +54,9 @@ contextBridge.exposeInMainWorld('naqi', {
   chooseFiles: () => ipcRenderer.invoke('choose-files'),
   chooseFolder: () => ipcRenderer.invoke('choose-folder'),         // -> new settings, or null
   clipboardText: () => ipcRenderer.invoke('clipboard-text'),
-  showInFolder: (path) => ipcRenderer.invoke('show-in-folder', path)
+  // The clipboard for Home's copied-link offer (T10.4); empty during the other self-tests and the demo
+  clipboardOffer: () => ipcRenderer.invoke('clipboard-offer'),
+  showInFolder: (path) => ipcRenderer.invoke('show-in-folder', path),
+  // Copy details on an engine error: { where, title, text } -> the text put on the clipboard (no private data)
+  copyDetails: (what) => ipcRenderer.invoke('error-details', what)
 })

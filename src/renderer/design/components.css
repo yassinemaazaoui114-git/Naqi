@@ -366,19 +366,30 @@ button:disabled { cursor: default; }
   --cleaned: 0; --played: 0;
   position: relative; height: 20px; cursor: pointer; touch-action: none;
 }
-.timebar-track, .timebar-clean, .timebar-played {
+/* The three lines sit in one box, so the muted parts (T10.2b) can pinch all of them at once: player.js gives the box a
+   mask (--muted-mask) that is thin where Naqi muted the sound, like the flat gaps of the report page's sound strip */
+.timebar-lines {
   position: absolute; left: 0; right: 0; top: 50%; height: 5px; margin-top: -2.5px; border-radius: var(--r-full);
+  mask-image: var(--muted-mask, none); mask-size: 100% 100%; mask-repeat: no-repeat;
   transition: height var(--t-fast) var(--ease-out), margin var(--t-fast) var(--ease-out);
 }
+.timebar-track, .timebar-clean, .timebar-played { position: absolute; inset: 0; border-radius: var(--r-full); }
 .timebar-track {
   background: repeating-linear-gradient(-45deg, var(--sunken) 0 4px, var(--border-strong) 4px 6px);
 }
 .timebar-clean {
   background: color-mix(in srgb, var(--clean) 38%, var(--sunken));
   transform-origin: left; transform: scaleX(var(--cleaned));
-  transition: transform 600ms var(--ease-out), height var(--t-fast) var(--ease-out), margin var(--t-fast) var(--ease-out);
+  transition: transform 600ms var(--ease-out);
 }
 .timebar-played { background: var(--clean); transform-origin: left; transform: scaleX(var(--played)); }
+/* The muted part under the pointer: a thin bracket around its pinch (its times are in the tip) */
+.timebar-span {
+  position: absolute; top: 3px; bottom: 3px; left: 0; width: 0;
+  border: 1.5px solid var(--text); border-radius: 5px; opacity: 0; pointer-events: none;
+  transform: scaleY(0.6); transition: opacity var(--t-fast) ease, transform var(--t-fast) var(--ease-out);
+}
+.timebar-span[data-on='true'] { opacity: 0.75; transform: none; }
 /* The clean edge: a short bright line that breathes while cleaning goes on */
 .timebar-edge {
   position: absolute; top: 2px; bottom: 2px; width: 2px; margin-left: -1px; border-radius: 2px;
@@ -396,7 +407,7 @@ button:disabled { cursor: default; }
   transition: transform var(--t-fast) var(--ease-out);
 }
 .timebar:hover .timebar-thumb, .timebar.is-dragging .timebar-thumb { transform: scale(1); }
-.timebar:hover :is(.timebar-track, .timebar-clean, .timebar-played) { height: 7px; margin-top: -3.5px; }
+.timebar:hover .timebar-lines { height: 7px; margin-top: -3.5px; }
 .timebar-tip {
   position: absolute; bottom: calc(100% + 6px); left: 0; transform: translateX(-50%) translateY(4px);
   padding: 3px 7px; border-radius: 6px; background: var(--text); color: var(--bg);
@@ -461,6 +472,16 @@ button:disabled { cursor: default; }
 }
 .toast.is-leaving { opacity: 0; transform: translateY(8px) scale(0.98); transition-duration: var(--t-fast); }
 .toast-close { margin: -4px -4px 0 0; }
+/* An offer (T10.4, a copied link): the link on one line, its button under it */
+.toast-offer > .icon { color: var(--clean); }
+.toast-offer > div { min-width: 0; }
+.toast-offer .msg-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toast-action { margin-top: var(--s2); }
+/* Copy details (T10.3): on an engine error; the copy icon turns into a check while "Copied" shows */
+.copy-details[data-state='copied'] { color: var(--clean); }
+.copy-details[data-state='copied'] .icon { animation: pop 360ms var(--ease-out); }
+.copy-details[data-state='failed'] { color: var(--danger); }
+.msg .copy-details { margin: var(--s2) 0 0 calc(-1 * var(--s2)); }
 
 /* ---------- Tooltip: data-tip on any element; waits a moment, then appears quickly ---------- */
 [data-tip] { position: relative; }
@@ -573,6 +594,7 @@ li[data-open='true'] > .lib-actions > div > * { opacity: 1; transform: none; tra
   *, *::before, *::after { animation-iteration-count: 1 !important; }
   .drop[data-state='drag'] .drop-edge rect, .wave[data-busy='true'] i, .bar[data-busy='true'] .bar-fill::after,
   .timebar[data-cleaning='true'] .timebar-edge, .status[data-busy='true'] .status-dot::after { animation: none !important; }
+  .timebar-span { transform: none; }
   .ring[data-state='waiting'] > svg { animation: none; }
   ::view-transition-new(root) { animation: none; }
 }

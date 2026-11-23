@@ -144,6 +144,22 @@ body { --side-w: 280px; display: grid; grid-template-columns: var(--side-w) 1fr;
 .is-entering[data-way='back'] { --from: -18px; }
 @keyframes page-in { from { opacity: 0; transform: translateX(var(--from, 18px)); } }
 
+/* ---------- Theater mode (T10.2, only while the player shows) ---------- */
+/* The library closes like a drawer: its rows fade first, then its column folds to nothing and the player takes the
+   width. Coming back, the column opens first and the rows fade in once there is room, so nothing is seen squeezed. */
+body { transition: grid-template-columns var(--t-slow) var(--ease-drawer); }
+body[data-theater] { --side-w: 0px; }
+.side {
+  overflow: hidden;
+  transition: opacity var(--t-fast) ease var(--t-fast), padding var(--t-slow) var(--ease-drawer);
+}
+body[data-theater] .side {
+  opacity: 0; visibility: hidden; padding-left: 0; padding-right: 0; border-right-width: 0;
+  transition: opacity 100ms ease, padding var(--t-slow) var(--ease-drawer), visibility 0s linear var(--t-slow);
+}
+.watch { transition: max-width var(--t-slow) var(--ease-drawer); }
+body[data-theater] .watch { max-width: 2400px; }
+
 /* ---------- Narrow window ---------- */
 @media (max-width: 960px) {
   body { --side-w: 236px; }
@@ -167,6 +183,7 @@ body { --side-w: 280px; display: grid; grid-template-columns: var(--side-w) 1fr;
 
 @media (prefers-reduced-motion: reduce) {
   .job.is-entering, .zone-link, .zone-files { animation: none; }
+  body, .watch { transition: none; }
   /* Pages still fade, without travelling */
   .is-entering[data-way] { --from: 0px; }
 }

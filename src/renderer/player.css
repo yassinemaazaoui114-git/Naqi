@@ -14,10 +14,12 @@
 
 .player { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3); }
 .screen {
+  --bar-h: 76px;   /* the bar's height: the waiting note and the sound mark sit above it */
   position: relative; flex: 1; min-height: 200px;
   display: grid; place-items: center;
   border-radius: var(--r-lg); background: var(--screen); overflow: hidden;
 }
+.screen:fullscreen { border-radius: 0; }
 .screen > * { grid-area: 1 / 1; }
 /* Out of the grid's flow, so a tall picture never makes the screen taller than its box (it is fitted inside) */
 .screen video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity var(--t-slow) ease; }
@@ -30,29 +32,79 @@
   display: none; place-items: center; width: 84px; height: 84px; border-radius: 26px;
   color: var(--clean); background: rgb(255 255 255 / 0.06);
 }
-.screen[data-kind='audio'] .screen-sound { display: grid; }
+.screen[data-kind='audio'] .screen-sound { display: grid; margin-bottom: var(--bar-h); }
 .screen[data-kind='audio'] video, .screen[data-kind='audio'] .screen-note { display: none; }
 /* Waiting at the clean edge: the picture dims and says so, the sound goes on by itself */
 .screen-wait {
-  align-self: end; margin-bottom: var(--s4); padding: 4px 10px; border-radius: var(--r-full);
+  align-self: end; margin-bottom: calc(var(--bar-h) + var(--s2)); padding: 4px 10px; border-radius: var(--r-full);
   background: rgb(0 0 0 / 0.55); color: #d7fbe9; backdrop-filter: blur(8px);
   opacity: 0; transform: translateY(4px); transition: opacity var(--t-normal) ease, transform var(--t-normal) var(--ease-out);
 }
 .screen[data-waiting='true'] .screen-wait { opacity: 1; transform: none; }
 .screen[data-waiting='true'] video { opacity: 0.55; }
-.screen-tag { position: absolute; left: var(--s3); bottom: var(--s3); background: rgb(0 0 0 / 0.55); color: #d7fbe9; backdrop-filter: blur(8px); }
+.screen-tag { position: absolute; left: var(--s3); top: var(--s3); background: rgb(0 0 0 / 0.55); color: #d7fbe9; backdrop-filter: blur(8px); }
 .screen[data-waiting='true'] .screen-tag { opacity: 0; }
 
-.controls { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s1) var(--s1); min-width: 0; }
+/* The bar on the picture (ROADMAP T10.1b): time bar and controls over the bottom of the screen, on a soft shade.
+   The screen is black in both themes, so the bar always uses the dark values (light-dark() is read where it is used),
+   with white made a little stronger for a bright picture. While the picture plays and nothing holds it, it hides a
+   moment after the mouse stops (player.js): the shade fades, the controls sink a little; a hairline stays at the
+   bottom with the played and the clean part. It comes back at once from a key, quickly from the mouse. */
+.screen-bar {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 0 var(--s4) var(--s2);
+  color-scheme: dark;
+  --text: #ffffff; --muted: rgb(255 255 255 / 0.82); --faint: rgb(255 255 255 / 0.55);
+  --hover: rgb(255 255 255 / 0.12); --press: rgb(255 255 255 / 0.2);
+  --sunken: rgb(255 255 255 / 0.2); --border-strong: rgb(255 255 255 / 0.32);
+  color: var(--text);
+  transition: opacity var(--t-fast) ease;
+}
+/* The shade reaches above the bar and fades out in small steps (one long step shows bands on a dark picture) */
+.screen-bar::before {
+  content: ''; position: absolute; inset: -56px 0 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.74), rgb(0 0 0 / 0.56) 28%, rgb(0 0 0 / 0.3) 58%, rgb(0 0 0 / 0.1) 82%, transparent);
+}
+.screen-bar > * { transition: transform var(--t-normal) var(--ease-out); }
+.screen[data-bar='hidden'] { cursor: none; }
+.screen[data-bar='hidden'] .screen-bar { opacity: 0; pointer-events: none; transition-duration: var(--t-slow); }
+.screen[data-bar='hidden'] .screen-bar > * { transform: translateY(8px); transition-duration: var(--t-slow); }
+.screen[data-bar-instant] .screen-bar, .screen[data-bar-instant] .screen-bar > * { transition-duration: 0ms; }
+.screen-peek {
+  --cleaned: 0; --played: 0;
+  position: absolute; left: 0; right: 0; bottom: 0; height: 3px; z-index: 1;
+  background: rgb(255 255 255 / 0.16); opacity: 0; pointer-events: none;
+  transition: opacity var(--t-fast) ease;
+}
+.screen-peek > div { position: absolute; inset: 0; transform-origin: left; }
+.peek-clean { background: color-mix(in srgb, var(--clean) 45%, transparent); transform: scaleX(var(--cleaned)); }
+.peek-played { background: var(--clean); transform: scaleX(var(--played)); }
+.screen[data-bar='hidden'] .screen-peek { opacity: 1; transition-delay: var(--t-fast); }
+/* Theater and fullscreen (T10.2): each button's icon morphs into its way back, like play and pause. In fullscreen
+   the library is out of sight anyway, so the theater button steps aside. */
+.btn-swap .icon { position: absolute; transition: opacity var(--t-fast) ease, transform var(--t-normal) var(--ease-out), filter var(--t-fast) ease; }
+.btn-swap .icon:last-child, .btn-swap[aria-pressed='true'] .icon:first-child { opacity: 0; transform: scale(0.6); filter: blur(3px); }
+.btn-swap[aria-pressed='true'] .icon:last-child { opacity: 1; transform: none; filter: none; }
+.screen:fullscreen :is(#theater-toggle, #mini-toggle) { display: none; }
+/* Tips stay inside the screen: the last three buttons' tips open to their left */
+.controls > :nth-last-child(-n+3)::after { left: auto; right: 0; transform: translate(0, 4px) scale(0.97); transform-origin: bottom right; }
+.controls > :nth-last-child(-n+3):is(:hover, :focus-visible)::after { transform: none; }
+
+.controls { display: flex; align-items: center; gap: var(--s3); padding: 0 0 var(--s1); min-width: 0; }
 .controls > .btn-play { flex: none; }
-.controls .range { flex: 0 1 110px; min-width: 56px; }
-/* A narrow player (small window, or a large text scale): Save and Report here keep their icons, their names move
-   into the tooltip; the volume bar gives way before anything else */
+/* Volume like YouTube: the speaker alone; the line slides out from it while the mouse is on the pair, a key or the
+   keyboard focus is on it (Up / Down show it for a moment). Width, not a transform: the buttons after it make room. */
+.volume-group { display: flex; align-items: center; flex: none; }
+.volume-group .range {
+  width: 0; min-width: 0; opacity: 0; margin-left: 0;
+  transition: width var(--t-normal) var(--ease-out), opacity var(--t-fast) ease, margin var(--t-normal) var(--ease-out);
+}
+.volume-group:is(:hover, :has(:focus-visible), .is-open) .range { width: 76px; opacity: 1; margin: 0 var(--s1) 0 var(--s2); }
+/* A narrow player (small window, or a large text scale): the buttons sit closer */
 .player { container-type: inline-size; }
 @container (max-width: 600px) {
   .controls { gap: var(--s2); }
-  .controls :is(#save-toggle, #report-here) { width: 30px; padding: 0; gap: 0; font-size: 0; }
-  .controls :is(#save-toggle, #report-here) .icon { width: 16px; height: 16px; }
 }
 .times { font-weight: 600; white-space: nowrap; }
 
@@ -75,9 +127,169 @@
 .watch-note:not([hidden]) { animation: swap-in var(--t-normal) var(--ease-out) both; }
 
 
+/* Keys card: rises from the keys button (its corner), lit keycaps answer the keys pressed while it is open.
+   Opened with ? it shows at once: something the keyboard does should not wait for motion. */
+#keys-toggle { anchor-name: --keys; }
+.keys-card {
+  position-anchor: --keys; inset: auto; bottom: anchor(top); right: anchor(right); margin: 0 -4px 10px 0;
+  position-try-fallbacks: flip-block;
+  width: 272px; padding: var(--s3) var(--s4); border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--surface); box-shadow: var(--shadow-3); color: var(--text);   /* solid: it sits over the black screen */
+  font-size: var(--text-sm); transform-origin: bottom right;
+  transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out), display 180ms allow-discrete, overlay 180ms allow-discrete;
+}
+.keys-card:not(:popover-open) { opacity: 0; transform: translateY(4px) scale(0.97); transition-duration: 120ms; }
+@starting-style { .keys-card:popover-open { opacity: 0; transform: translateY(4px) scale(0.97); } }
+.keys-card[data-instant] { transition-duration: 0ms; }
+.keys-group { margin: var(--s3) 0 var(--s1); font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.keys-group:first-child { margin-top: 0; }
+.keys-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); min-height: 28px; }
+.keys-caps { display: flex; align-items: center; gap: 4px; flex: none; }
+.keys-plus { color: var(--muted); font-size: var(--text-xs); }
+.keys-card kbd {
+  display: inline-grid; place-items: center; min-width: 24px; height: 22px; padding: 0 6px;
+  border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 6px;
+  background: var(--surface); color: var(--text); font: 600 var(--text-xs) / 1 var(--font);
+  transition: background-color 400ms ease, color 400ms ease, border-color 400ms ease, transform 400ms var(--ease-out);
+}
+.keys-card kbd.is-lit {
+  background: var(--clean-soft); color: var(--clean); border-color: var(--clean); transform: translateY(1px);
+  transition-duration: 0ms;
+}
+.keys-foot { margin: var(--s3) 0 0; padding-top: var(--s2); border-top: 1px solid var(--border); color: var(--muted); }
+
+/* Settings menu (ROADMAP T10.5): a dark glass card over the picture, like the bar (dark values in both themes). It
+   rises from the gear (which turns a little), and holds two lists: the settings, and the one opened. Going in slides
+   the lists left, Back slides them right, and the card's height follows the list. In the speed list one green dot
+   marks the speed and slides to the new one, so the change is seen, not only a tick that jumps. */
+.gear-toggle .icon { transition: transform var(--t-slow) var(--ease-out); }
+.gear-toggle[aria-expanded='true'] .icon { transform: rotate(45deg); }
+.controls .gear-toggle[aria-expanded='true'], .corner .gear-toggle[aria-expanded='true'] { background: var(--press); color: var(--text); }
+.gear-toggle[aria-expanded='true']::after { display: none; }   /* its tip would sit under the open menu */
+.gear-menu {
+  --h: auto;
+  position: absolute; z-index: 3; right: var(--s3); bottom: calc(var(--bar-h) + 2px);
+  width: 252px; height: var(--h); max-height: calc(100% - var(--bar-h) - var(--s2));
+  display: grid; grid-template-rows: minmax(0, 1fr); overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 0.1); border-radius: var(--r-lg);
+  background: rgb(14 18 28 / 0.86); backdrop-filter: blur(16px) saturate(1.2);
+  box-shadow: 0 18px 44px -18px rgb(0 0 0 / 0.7);
+  color-scheme: dark; color: #fff; font-size: var(--text-sm);
+  --hover: rgb(255 255 255 / 0.09); --press: rgb(255 255 255 / 0.15); --muted: rgb(255 255 255 / 0.66);
+  transform-origin: bottom right;
+  transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out), height var(--t-normal) var(--ease-out), visibility 0ms;
+}
+.gear-menu[data-open='false'] { opacity: 0; transform: translateY(6px) scale(0.97); visibility: hidden; pointer-events: none;
+  transition: opacity 120ms ease, transform 120ms ease, visibility 0ms 120ms; }
+.gear-menu[data-instant] { transition-duration: 0ms !important; transition-delay: 0ms !important; }
+.gear-menu[data-sizing] { transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out), visibility 0ms; }
+.gear-panel {
+  grid-area: 1 / 1; align-self: start; max-height: 100%; overflow-y: auto; overscroll-behavior: contain; padding: 6px;
+  display: flex; flex-direction: column;
+  transition: opacity var(--t-fast) ease, transform var(--t-normal) var(--ease-out), visibility 0ms;
+}
+.gear-menu[data-panel='main'] .gear-panel:not([data-name='main']) { opacity: 0; transform: translateX(28px); visibility: hidden; transition-delay: 0ms, 0ms, var(--t-normal); }
+.gear-menu:not([data-panel='main']) .gear-panel[data-name='main'] { opacity: 0; transform: translateX(-28px); visibility: hidden; transition-delay: 0ms, 0ms, var(--t-normal); }
+.gear-item {
+  position: relative; display: flex; align-items: center; gap: var(--s2);
+  min-height: 34px; padding: 0 var(--s3); border: 0; border-radius: var(--r-md);
+  background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+  transition: background-color var(--t-fast) ease, transform var(--t-press) var(--ease-out);
+}
+.gear-item:hover { background: var(--hover); }
+.gear-item:active { background: var(--press); transform: scale(0.985); }
+.gear-item:focus-visible { outline: 2px solid var(--clean); outline-offset: -2px; }
+.gear-name { flex: 1; font-weight: 600; }
+.gear-value { color: var(--muted); }
+.gear-value.is-swapping { animation: swap-in var(--t-normal) var(--ease-out) both; }
+.gear-next { color: var(--muted); margin-right: -4px; }
+.gear-head { margin-bottom: 4px; }
+.gear-head::after { content: ''; position: absolute; left: var(--s2); right: var(--s2); bottom: -3px; height: 1px; background: rgb(255 255 255 / 0.1); }
+.gear-head .gear-value { font-size: var(--text-xs); }
+/* The speeds: numbers right after the dot's lane; the chosen one is green and bold */
+.gear-choices { position: relative; display: flex; flex-direction: column; }
+.gear-choices .gear-item { padding-left: 34px; font-variant-numeric: tabular-nums; }
+.gear-choices .gear-item[aria-checked='true'] { color: var(--clean); font-weight: 700; }
+.gear-dot {
+  --y: 0px;
+  position: absolute; left: 15px; top: 13px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--clean); box-shadow: 0 0 0 4px rgb(52 211 153 / 0.16); pointer-events: none;
+  transform: translateY(var(--y)); transition: transform var(--t-normal) var(--ease-out);
+}
+.gear-dot[data-instant] { transition: none; }
+/* Save and Report here act on the item: a thin line sets them under the settings; the value says why Save waits.
+   Their tips stay off (the value says it), and the corner's menu has only the settings. */
+.gear-act::after { display: none; }
+.gear-item:not(.gear-act) + .gear-act:not([hidden]), .gear-item:not(.gear-act) + .gear-act[hidden] + .gear-act { margin-top: 7px; }
+.gear-item:not(.gear-act) + .gear-act:not([hidden])::before, .gear-item:not(.gear-act) + .gear-act[hidden] + .gear-act::before {
+  content: ''; position: absolute; left: var(--s2); right: var(--s2); top: -4px; height: 1px; background: rgb(255 255 255 / 0.1); }
+.gear-item:disabled { cursor: default; opacity: 0.5; }
+.gear-item:disabled:is(:hover, :active) { background: none; transform: none; }
+.corner .gear-act { display: none; }
+/* In the corner the menu rises above the small card (there is no room on its picture) */
+.corner .gear-menu { right: 0; bottom: calc(100% + 8px); max-height: calc(100vh - 140px); }
+
+/* Keep playing in a corner (ROADMAP T10.2c): a small card at the bottom right while Home or the report page shows.
+   The player's own <video> moves into it (the sound never stops), so the picture stays in sync the same way. It
+   rises from the corner it lives in; from a key (Escape) it is just there. A sound only is a slim row. */
+.corner {
+  position: fixed; z-index: 45; right: var(--s5); bottom: var(--s5);
+  width: clamp(224px, 22vw, 300px); padding: 6px;
+  display: grid; gap: 4px;
+  border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--surface); box-shadow: var(--shadow-3); color: var(--text);
+  transform-origin: bottom right;
+}
+.corner[hidden] { display: none; }
+.corner.is-entering { animation: corner-in var(--t-normal) var(--ease-out) both; }
+@keyframes corner-in { from { opacity: 0; transform: translateY(10px) scale(0.94); } }
+.corner.is-leaving { animation: corner-out 140ms ease both; pointer-events: none; }
+@keyframes corner-out { to { opacity: 0; transform: translateY(6px) scale(0.97); } }
+.corner-screen {
+  position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; padding: 0;
+  border: 0; border-radius: calc(var(--r-lg) - 4px); background: var(--screen); cursor: pointer;
+  transition: transform var(--t-press) var(--ease-out);
+}
+.corner-screen:active { transform: scale(0.985); }
+.corner-screen:focus-visible { outline: 2px solid var(--clean); outline-offset: 2px; }
+.corner-pic { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; }
+.corner-pic video { width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity var(--t-normal) ease; }
+.corner[data-picture='shown'] .corner-pic video { opacity: 1; }
+.corner[data-waiting='true'] .corner-pic video { opacity: 0.55; }
+/* The played and the clean part, like the screen's hairline when its bar is hidden */
+.corner-peek {
+  --cleaned: 1; --played: 0;
+  position: absolute; left: 0; right: 0; bottom: 0; height: 3px; overflow: hidden;
+  border-radius: 0 0 calc(var(--r-lg) - 4px) calc(var(--r-lg) - 4px);
+  background: rgb(255 255 255 / 0.16); pointer-events: none;
+}
+.corner-peek > span { position: absolute; inset: 0; transform-origin: left; }
+.corner-row { display: flex; align-items: center; gap: 2px; min-width: 0; padding-left: var(--s2); }
+.corner-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); font-weight: 600; }
+.corner-sound { display: none; flex: none; color: var(--clean); margin-right: var(--s1); }
+.corner[data-kind='audio'] .corner-screen { aspect-ratio: auto; height: 3px; border-radius: 2px; background: none; order: 1; }
+.corner[data-kind='audio'] .corner-pic { display: none; }
+.corner[data-kind='audio'] .corner-peek { border-radius: 2px; }
+.corner[data-kind='audio'] .corner-sound { display: block; }
+.corner[data-kind='audio'] .corner-title { cursor: pointer; }
+/* Tips stay inside the window: the two buttons' tips open to their left */
+.corner-row > .btn::after { left: auto; right: 0; transform: translate(0, 4px) scale(0.97); transform-origin: bottom right; }
+.corner-row > .btn:is(:hover, :focus-visible)::after { transform: none; }
+
 @media (max-width: 960px) {
   .watch { padding-left: var(--s4); padding-right: var(--s4); }
 }
 @media (prefers-reduced-motion: reduce) {
   .watch-note:not([hidden]), .save-status[data-state='done'] { animation: none; }
+  .keys-card, .keys-card:not(:popover-open) { transform: none; }
+  .corner.is-entering { animation-name: corner-fade; }
+  .corner.is-leaving { animation-name: corner-fade-out; }
+  .screen[data-bar='hidden'] .screen-bar > * { transform: none; }
+  .volume-group .range { transition: opacity var(--t-fast) ease; }
+  .btn-swap .icon { transform: none !important; filter: none !important; }
+  .gear-menu, .gear-menu[data-open='false'], .gear-panel { transform: none !important; }
+  .gear-toggle[aria-expanded='true'] .icon { transform: none; }
+  @starting-style { .keys-card:popover-open { transform: none; } }
 }
+@keyframes corner-fade { from { opacity: 0; } }
+@keyframes corner-fade-out { to { opacity: 0; } }

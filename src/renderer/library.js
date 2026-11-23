@@ -4,6 +4,7 @@
 // main.js decides how). Remove waits a few seconds with an Undo, then
 // the engine deletes the row and Naqi's own kept copy; saved files and own files are never touched.
 import { icon } from './design/icons.js'
+import { detailsButton } from './details.js'
 import { onRated, rate, rateEl, showRating } from './rating.js'
 
 const $ = (sel, root = document) => root.querySelector(sel)
@@ -187,7 +188,7 @@ async function rateItem(id, value) {
   try { await rate(id, value) } catch (e) {
     it.rating = before
     draw()
-    undoToast(null, 'Rating not saved', cleanError(e))
+    undoToast(null, 'Rating not saved', cleanError(e), 'Library, rating')
   }
 }
 onRated(({ id, rating }) => {
@@ -206,7 +207,7 @@ function remove(id) {
   const finish = async () => {
     lib.leaving.delete(id)
     window.dispatchEvent(new CustomEvent('naqi-removed', { detail: { id } }))
-    try { await window.naqi.removeFromLibrary(id) } catch (e) { undoToast(null, 'Could not remove it', cleanError(e)) }
+    try { await window.naqi.removeFromLibrary(id) } catch (e) { undoToast(null, 'Could not remove it', cleanError(e), 'Library, Remove') }
     load()
   }
   lib.leaving.set(id, setTimeout(finish, UNDO_MS))
@@ -220,13 +221,14 @@ function remove(id) {
 
 const cleanError = (e) => e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 
-function undoToast(undo, title, text) {
+function undoToast(undo, title, text, where = '') {
   const t = document.createElement('div')
   t.className = 'msg toast'
   if (!undo) t.dataset.kind = 'error'
   t.innerHTML = `${icon(undo ? 'trash' : 'error')}<div><p class="msg-title"></p><p class="msg-text"></p></div>`
   $('.msg-title', t).textContent = title
   $('.msg-text', t).textContent = text
+  if (where) $('.msg-text', t).after(detailsButton({ where, title, text }))
   const leave = () => {
     if (t.classList.contains('is-leaving')) return
     t.classList.add('is-leaving')

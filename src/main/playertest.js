@@ -96,7 +96,10 @@ export async function run(win, engine) {
     // B. Back, then played again from the library (the cache)
     await page(`document.querySelector('#watch-back').click()`)
     await sleep(500)
-    check('B. Back returns to Home and stops', !(await watching()) && await page(`document.querySelector('#go') !== null`))
+    check('B. Back returns to Home, the item goes on in the corner (T10.2c)', !(await watching()) && await page(`!document.querySelector('#corner').hidden`))
+    await page(`document.querySelector('#corner').hidden || document.querySelector('#corner-close').click()`)   // Stop: closed, so Play opens it anew
+    await sleep(500)
+    check('B. Stop in the corner stops it', (await stats()).id === null)
     clickAt = await page(`(() => { const t = performance.now(); document.querySelector('#lib li[data-id="${linkRow}"] [data-act="play"]').click(); return t })()`)
     check('B. Play in the library opens it', await until(watching, 5000))
     delay = await startDelay(clickAt)
@@ -104,6 +107,8 @@ export async function run(win, engine) {
     check('B. plays from the cache at once, all of it clean', delay < 3 && !s.live, `${delay.toFixed(2)} s`)
     check('B. its picture is shown again', await until(async () => (await stats()).using === 'stream', 20000), `after ${(((await stats()).now - clickAt) / 1000).toFixed(1)} s`)
     await page(`document.querySelector('#watch-back').click()`)
+    await page(`document.querySelector('#corner').hidden || document.querySelector('#corner-close').click()`)
+    await sleep(500)
 
     // C. Its cleaned sound tidied away: Play cleans it again first (the kept original is used, nothing downloaded)
     for (const f of readdirSync(join(data, 'history'))) {

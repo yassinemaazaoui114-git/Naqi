@@ -43,6 +43,7 @@
             <div class="status-text" id="engine-text">Loading the music remover</div>
           </div>
           <button class="btn btn-ghost btn-sm" id="engine-restart" hidden>Start again</button>
+          <span id="engine-details" hidden></span>
         </div>
         <div class="seg" id="theme" aria-label="Theme">
           <button data-mode="system" aria-label="Follow Windows" title="Follow Windows"><i data-icon="system" class="icon-sm"></i></button>
@@ -155,6 +156,7 @@
             <span class="wave" id="wave" aria-hidden="true"></span>
             <span class="meta" id="job-device"></span>
             <span class="row-gap"></span>
+            <span id="job-details" hidden></span>
             <button class="btn btn-quiet btn-sm" id="show" hidden><i data-icon="folder" class="icon-sm"></i>Show in folder</button>
             <button class="btn btn-ghost btn-sm" id="play-now" hidden><i data-icon="play" class="icon-sm"></i>Play</button>
           </div>
@@ -180,24 +182,77 @@
           <p class="screen-note" id="screen-note"></p>
           <p class="screen-wait" aria-hidden="true">Waiting for the cleaning…</p>
           <span class="tag screen-tag num" id="clean-tag" hidden></span>
+          <!-- While the bar is hidden: a hairline at the bottom keeps the played and the clean part in sight -->
+          <div class="screen-peek" id="screen-peek" aria-hidden="true"><div class="peek-clean"></div><div class="peek-played"></div></div>
+          <!-- The bar on the picture (T10.1b): hides a moment after the mouse stops while the picture plays -->
+          <div class="screen-bar" id="screen-bar">
+            <div class="timebar" id="timebar" data-cleaning="false" role="slider" tabindex="0" aria-label="Time" aria-valuemin="0">
+              <div class="timebar-lines" id="timebar-lines"><div class="timebar-track"></div><div class="timebar-clean"></div><div class="timebar-played"></div></div>
+              <div class="timebar-span" id="timebar-span"></div>
+              <div class="timebar-edge"></div>
+              <div class="timebar-thumb"></div>
+              <div class="timebar-tip" id="timebar-tip">0:00</div>
+            </div>
+            <div class="controls">
+              <button class="btn btn-play" id="player-play" data-autofocus aria-pressed="false" aria-label="Play (Space)"><i data-icon="play"></i><i data-icon="pause"></i></button>
+              <span class="num times"><span id="t-now">0:00</span> <span class="meta">/ <span id="t-len">0:00</span></span></span>
+              <span class="row-gap"></span>
+              <button class="btn btn-icon btn-sm" id="save-show" aria-label="Show the saved file in its folder" data-tip="Show in folder" hidden><i data-icon="folder" class="icon-sm"></i></button>
+              <!-- Like YouTube: the speaker alone; its volume line slides out while the mouse or focus is on it -->
+              <span class="volume-group" id="volume-group">
+                <button class="btn btn-icon btn-sm" id="mute" aria-label="Mute (M)" data-tip="Mute (M)"><i data-icon="volume" class="icon-sm"></i></button>
+                <input class="range" id="volume" type="range" min="0" max="1" step="0.01" value="1" aria-label="Volume" />
+              </span>
+              <button class="btn btn-icon btn-sm" id="keys-toggle" aria-label="Keys (?)" data-tip="Keys (?)" aria-expanded="false" aria-controls="keys-card"><i data-icon="keys" class="icon-sm"></i></button>
+              <!-- T10.5: settings like YouTube's (Speed first; the next settings join its list) -->
+              <button class="btn btn-icon btn-sm gear-toggle" id="gear-toggle" aria-label="Settings" data-tip="Settings" aria-expanded="false" aria-controls="gear-menu" aria-haspopup="menu"><i data-icon="gear" class="icon-sm"></i></button>
+              <!-- T10.2: theater (wide, library hidden) and fullscreen; each icon turns into its way back -->
+              <button class="btn btn-icon btn-sm" id="mini-toggle" aria-label="Miniplayer (I)" data-tip="Miniplayer (I)"><i data-icon="mini" class="icon-sm"></i></button>
+              <button class="btn btn-icon btn-sm btn-swap" id="theater-toggle" aria-label="Theater mode (T)" data-tip="Theater mode (T)" aria-pressed="false"><i data-icon="theater" class="icon-sm"></i><i data-icon="theater-exit" class="icon-sm"></i></button>
+              <button class="btn btn-icon btn-sm btn-swap" id="full-toggle" aria-label="Fullscreen (F)" data-tip="Fullscreen (F)" aria-pressed="false"><i data-icon="full" class="icon-sm"></i><i data-icon="full-exit" class="icon-sm"></i></button>
+            </div>
+          </div>
+          <!-- Settings menu (T10.5): inside the screen, so it stays with it in fullscreen (and moves to the corner
+               with the picture). Two lists in one card: the settings, and the one opened; the card takes its height. -->
+          <div class="gear-menu" id="gear-menu" data-open="false" data-panel="main" inert>
+            <div class="gear-panel" data-name="main" role="menu" aria-label="Settings">
+              <button class="gear-item" role="menuitem" data-go="speed" aria-haspopup="menu"><i data-icon="speed" class="icon-sm"></i><span class="gear-name">Speed</span><span class="gear-value num" id="gear-speed-value">Normal</span><i data-icon="next" class="icon-sm gear-next"></i></button>
+              <!-- Save and Report here act on the item, so they sit under the settings after a line (not in the corner) -->
+              <button class="gear-item gear-act" role="menuitem" id="save-toggle" aria-expanded="false" aria-controls="save-panel" hidden><i data-icon="save" class="icon-sm"></i><span class="gear-name">Save…</span><span class="gear-value" id="gear-save-value">MP3 or MP4</span></button>
+              <button class="gear-item gear-act" role="menuitem" id="report-here"><i data-icon="flag" class="icon-sm"></i><span class="gear-name">Report here</span><span class="gear-value num" id="gear-report-value">0:00</span></button>
+            </div>
+            <div class="gear-panel" data-name="speed" role="menu" aria-label="Speed">
+              <button class="gear-item gear-head" data-go="main" aria-label="Back to the settings"><i data-icon="back" class="icon-sm"></i><span class="gear-name">Speed</span><span class="gear-value">voice stays natural</span></button>
+              <div class="gear-choices" id="gear-speeds">
+                <span class="gear-dot" aria-hidden="true"></span>
+                <button class="gear-item" role="menuitemradio" data-speed="0.5">0.5x</button>
+                <button class="gear-item" role="menuitemradio" data-speed="0.75">0.75x</button>
+                <button class="gear-item" role="menuitemradio" data-speed="1">Normal</button>
+                <button class="gear-item" role="menuitemradio" data-speed="1.25">1.25x</button>
+                <button class="gear-item" role="menuitemradio" data-speed="1.5">1.5x</button>
+                <button class="gear-item" role="menuitemradio" data-speed="1.75">1.75x</button>
+                <button class="gear-item" role="menuitemradio" data-speed="2">2x</button>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="timebar" id="timebar" data-cleaning="false" role="slider" tabindex="0" aria-label="Time" aria-valuemin="0">
-          <div class="timebar-track"></div>
-          <div class="timebar-clean"></div>
-          <div class="timebar-played"></div>
-          <div class="timebar-edge"></div>
-          <div class="timebar-thumb"></div>
-          <div class="timebar-tip" id="timebar-tip">0:00</div>
-        </div>
-        <div class="controls">
-          <button class="btn btn-play" id="player-play" data-autofocus aria-pressed="false" aria-label="Play (Space)"><i data-icon="play"></i><i data-icon="pause"></i></button>
-          <span class="num times"><span id="t-now">0:00</span> <span class="meta">/ <span id="t-len">0:00</span></span></span>
-          <span class="row-gap"></span>
-          <button class="btn btn-quiet btn-sm disclosure-toggle" id="save-toggle" aria-expanded="false" aria-controls="save-panel" data-tip="Save as MP3 or MP4" hidden><i data-icon="save" class="icon-sm"></i><span>Save…</span></button>
-          <button class="btn btn-icon btn-sm" id="save-show" aria-label="Show the saved file in its folder" data-tip="Show in folder" hidden><i data-icon="folder" class="icon-sm"></i></button>
-          <button class="btn btn-quiet btn-sm" id="report-here" data-tip="Music heard, or something cut? Report the last seconds"><i data-icon="flag" class="icon-sm"></i>Report here</button>
-          <button class="btn btn-icon btn-sm" id="mute" aria-label="Mute (M)" data-tip="Mute (M)"><i data-icon="volume" class="icon-sm"></i></button>
-          <input class="range" id="volume" type="range" min="0" max="1" step="0.01" value="1" aria-label="Volume" />
+        <!-- The player's keys (T10.1): opened by the keys button or ?; a key pressed while it is open lights up here -->
+        <div class="keys-card" id="keys-card" popover="manual" role="dialog" aria-label="Player keys">
+          <p class="keys-group">Play</p>
+          <div class="keys-row"><span>Play or pause</span><span class="keys-caps"><kbd data-k="space">Space</kbd><kbd data-k="k">K</kbd></span></div>
+          <div class="keys-row"><span>Volume up or down</span><span class="keys-caps"><kbd data-k="up">↑</kbd><kbd data-k="down">↓</kbd></span></div>
+          <div class="keys-row"><span>Mute</span><span class="keys-caps"><kbd data-k="m">M</kbd></span></div>
+          <p class="keys-group">Move</p>
+          <div class="keys-row"><span>5 s back or forward</span><span class="keys-caps"><kbd data-k="left">←</kbd><kbd data-k="right">→</kbd></span></div>
+          <div class="keys-row"><span>10 s back or forward</span><span class="keys-caps"><kbd data-k="j">J</kbd><kbd data-k="l">L</kbd></span></div>
+          <div class="keys-row"><span>10 s, too</span><span class="keys-caps"><kbd data-k="shift-left shift-right">Shift</kbd><span class="keys-plus">+</span><kbd data-k="shift-left">←</kbd><kbd data-k="shift-right">→</kbd></span></div>
+          <p class="keys-group">Screen</p>
+          <div class="keys-row"><span>Fullscreen (or double click)</span><span class="keys-caps"><kbd data-k="f">F</kbd></span></div>
+          <div class="keys-row"><span>Miniplayer (keeps playing in the corner)</span><span class="keys-caps"><kbd data-k="i">I</kbd></span></div>
+          <div class="keys-row"><span>Theater mode</span><span class="keys-caps"><kbd data-k="t">T</kbd></span></div>
+          <div class="keys-row"><span>Back, or leave fullscreen</span><span class="keys-caps"><kbd data-k="esc">Esc</kbd></span></div>
+          <div class="keys-row"><span>This list</span><span class="keys-caps"><kbd data-k="?">?</kbd></span></div>
+          <p class="keys-foot">Jumps stay inside the lit part, the part already clean.</p>
         </div>
         <!-- Save (old SPEC R14e): optional and last; made from the cleaned sound, nothing is cleaned again -->
         <div class="disclosure" id="save-panel" data-open="false">
@@ -211,6 +266,7 @@
               <div class="save-state" aria-live="polite">
                 <div class="bar" id="save-bar" hidden><div class="bar-fill"></div></div>
                 <p class="meta save-status" id="save-status"></p>
+                <span id="save-details" hidden></span>
               </div>
             </div>
           </div>
@@ -291,6 +347,22 @@
       <p class="report-status" id="report-status" aria-live="polite"></p>
     </main>
     </div>
+
+    <!-- Keep playing in a corner (T10.2c): the player's item goes on while Home or the report page is shown; the
+         picture moves in here, a click on it returns to the full player at the same moment -->
+    <aside class="corner" id="corner" hidden aria-label="Still playing" data-kind="video" data-picture="none">
+      <button class="corner-screen" id="corner-open" aria-label="Back to the player" data-tip="Back to the player">
+        <span class="corner-pic" id="corner-pic"></span>
+        <span class="corner-peek" aria-hidden="true"><span class="peek-clean"></span><span class="peek-played"></span></span>
+      </button>
+      <div class="corner-row">
+        <i data-icon="audio" class="icon-sm corner-sound" aria-hidden="true"></i>
+        <span class="corner-title" id="corner-title" dir="auto"></span>
+        <button class="btn btn-icon btn-sm gear-toggle" id="corner-gear" aria-label="Settings" data-tip="Settings" aria-expanded="false" aria-controls="gear-menu" aria-haspopup="menu"><i data-icon="gear" class="icon-sm"></i></button>
+        <button class="btn btn-icon btn-sm btn-swap" id="corner-play" aria-pressed="false" aria-label="Play" data-tip="Play"><i data-icon="play" class="icon-sm"></i><i data-icon="pause" class="icon-sm"></i></button>
+        <button class="btn btn-icon btn-sm" id="corner-close" aria-label="Stop and close" data-tip="Stop"><i data-icon="close" class="icon-sm"></i></button>
+      </div>
+    </aside>
 
     <div class="toasts" id="toasts" aria-live="polite"></div>
     <script type="module" src="./main.js"></script>

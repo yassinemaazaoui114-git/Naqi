@@ -152,6 +152,8 @@ export async function run(win, engine) {
 
     // D. The link's cleaned sound tidied away: it plays the saved MP4, Save is off and says why
     await click('#watch-back')
+    await page(`document.querySelector('#corner').hidden || document.querySelector('#corner-close').click()`)   // the corner (T10.2c) would keep the cleaned sound open
+    await sleep(500)
     unlinkSync(join(linkDir, 'cleaned.wav'))
     await page(`window.dispatchEvent(new Event('focus'))`)
     await sleep(800)

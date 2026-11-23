@@ -27,5 +27,5 @@ export function show(name, detail = {}, { instant = false } = {}) {
   if (leaving.contains(document.activeElement) || document.activeElement === document.body) {
     el.querySelector('[data-autofocus]')?.focus({ preventScroll: true })
   }
-  window.dispatchEvent(new CustomEvent('naqi-page', { detail: { page: name, ...detail } }))
+  window.dispatchEvent(new CustomEvent('naqi-page', { detail: { page: name, instant, ...detail } }))
 }

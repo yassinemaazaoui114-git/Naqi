@@ -144,6 +144,9 @@ function toggle() {
 playBtn.addEventListener('click', toggle)
 audio.addEventListener('pause', () => { s.stopAt = null; draw() })
 audio.addEventListener('play', draw)
+// One sound at a time: the strip pauses the player's item in the corner (T10.2c), and that item pauses the strip
+audio.addEventListener('play', () => window.dispatchEvent(new CustomEvent('naqi-strip-play')))
+window.addEventListener('naqi-player-play', () => audio.pause())
 audio.addEventListener('loadedmetadata', () => { drawMoment(); draw() })
 audio.addEventListener('error', () => {
   if (s.id === null || !audio.getAttribute('src')) return

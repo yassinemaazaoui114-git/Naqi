@@ -5,6 +5,7 @@
 // with that file picked (main.js). Above the times, the sound strip plays a picked library file's cleaned sound
 // (strip.js), so the moment is found by ear and its times taken from the playhead.
 import { icon } from './design/icons.js'
+import { detailsButton } from './details.js'
 import * as pages from './pages.js'
 import * as player from './player.js'
 import { onRated, rate, rateEl, showRating } from './rating.js'
@@ -133,7 +134,7 @@ function rowEl(it) {
     showRating(rating, value)
     try { await rate(it.id, value) } catch (e) {   // a Bad rating picks the row (onRated -> main.js -> open)
       showRating(rating, it.rating)
-      setStatus(`Rating not saved: ${cleanError(e)}`, 'error')
+      setStatus(`Rating not saved: ${cleanError(e)}`, 'error', 'Report a slip, rating')
     }
   })
   showRating(rating, it.rating)
@@ -178,7 +179,7 @@ async function choose(what) {
     mark()
     from.focus({ preventScroll: true })
   } catch (e) {
-    setStatus(cleanError(e), 'error')
+    setStatus(cleanError(e), 'error', 'Report a slip, picking the file')
   }
 }
 
@@ -228,11 +229,13 @@ strip.onFill((which, time) => {
 for (const box of [source, from, to, note]) box.addEventListener('keydown', (e) => { if (e.key === 'Enter') save() })
 
 // ---------- Saving ----------
-function setStatus(text, kind = '') {
+// where: an engine error, named for Copy details (after the text)
+function setStatus(text, kind = '', where = '') {
   const el = $('#report-status')
   el.dataset.kind = kind
   el.innerHTML = text ? `${kind ? icon(kind === 'error' ? 'error' : 'done', 'icon-sm') : ''}<span></span>` : ''
   if (text) $('span', el).textContent = text
+  if (text && where) el.append(detailsButton({ where, title: '', text }, { small: true }))
 }
 
 async function save() {
@@ -258,7 +261,7 @@ async function save() {
     from.focus()
     fillRecent()
   } catch (e) {
-    setStatus(cleanError(e), 'error')
+    setStatus(cleanError(e), 'error', 'Report a slip, saving')
   } finally {
     r.saving = false
     saveBtn.disabled = false

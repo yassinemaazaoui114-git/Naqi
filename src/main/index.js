@@ -2,12 +2,21 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, protocol, 
 import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, normalize } from 'node:path'
+import { details, remember } from './details'
 import { Engine } from './engine'
 
 // Installed (T7.1): the engine is packed into resources\engine\NaqiEngine.exe; in dev it is engine\server.py
 const engine = app.isPackaged
   ? new Engine(join(process.resourcesPath, 'engine'), join(process.resourcesPath, 'engine', 'NaqiEngine.exe'))
   : new Engine(join(app.getAppPath(), 'engine'))
+
+// The demo recorder (NAQI_SELFTEST=demo) needs every frame painted, even while the window is covered
+if (process.env.NAQI_SELFTEST === 'demo') {
+  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
+  app.commandLine.appendSwitch('disable-renderer-backgrounding')
+  app.commandLine.appendSwitch('disable-background-timer-throttling')
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+}
 
 // The player's <audio> and <video> read the engine's media through naqi-media://engine/<path>: the main process
 // adds the token, so the page never holds it. stream: true lets the media elements read it piece by piece.
@@ -34,8 +43,9 @@ function setTheme(mode) {
 
 // The Home page's choices (format, quality, sizes, save folder, last files folder), kept like the theme.
 // Saved files go into a folder per day inside `folder` (old Naqi SPEC R10); default Videos\Naqi.
+// clip_asked: the copied links Home already offered to clean (T10.4, a JSON list), so each is asked once.
 const settingsFile = () => join(app.getPath('userData'), 'settings.json')
-const SETTINGS = ['folder', 'format', 'mp3_quality', 'mp4_quality', 'files_format', 'files_size', 'files_folder', 'volume']
+const SETTINGS = ['folder', 'format', 'mp3_quality', 'mp4_quality', 'files_format', 'files_size', 'files_folder', 'volume', 'theater', 'clip_asked']
 function readSaved() {
   try { return JSON.parse(readFileSync(settingsFile(), 'utf8')) } catch { return {} /* first start */ }
 }
@@ -175,6 +185,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('cases-source', (_event, what) => engine.call('/cases/source', what))
   ipcMain.handle('cases-save', (_event, spec) => engine.call('/cases', spec))
   ipcMain.handle('cases-wave', (_event, id) => engine.call(`/library/${Number(id)}/wave`))
+  ipcMain.handle('player-muted', (_event, id) => engine.call(`/library/${Number(id)}/muted`))
   ipcMain.handle('choose-file', (event) => chooseFiles(BrowserWindow.fromWebContents(event.sender), false))
   ipcMain.handle('file-kinds', (_event, paths) => engine.call('/kinds', { paths }))
   ipcMain.handle('settings-get', () => loadSettings())
@@ -182,14 +193,20 @@ app.whenReady().then(async () => {
   ipcMain.handle('choose-files', (event) => chooseFiles(BrowserWindow.fromWebContents(event.sender)))
   ipcMain.handle('choose-folder', (event) => chooseFolder(BrowserWindow.fromWebContents(event.sender)))
   ipcMain.handle('clipboard-text', () => clipboard.readText())
+  ipcMain.handle('clipboard-offer', () => (!process.env.NAQI_SELFTEST || process.env.NAQI_SELFTEST === 'clip' ? clipboard.readText() : ''))
   ipcMain.handle('show-in-folder', (_event, path) => showInFolder(path))
+  ipcMain.handle('error-details', (_event, what) => details(engine, info, what || {}))
   engine.on('status', (s) => console.log('[naqi] engine:', s.status, s.gpu?.name || '', s.message || ''))
+  engine.on('status', (s) => { if (s.status === 'ready') remember(engine) })   // its versions, for Copy details
   engine.start()
   const win = createWindow()
   console.log('[naqi] system info:', await info)
   const tests = { home: () => import('./hometest'), library: () => import('./librarytest'), player: () => import('./playertest'),
     report: () => import('./reporttest'), save: () => import('./savetest'), polish: () => import('./polishtest'),
-    speed: () => import('./speedtest'), installed: () => import('./installtest') }
+    speed: () => import('./speedtest'), installed: () => import('./installtest'), demo: () => import('./demorecord'),
+    keys: () => import('./keystest'), full: () => import('./fulltest'), mutes: () => import('./mutestest'),
+    corner: () => import('./cornertest'), details: () => import('./detailstest'), clip: () => import('./cliptest'),
+    gear: () => import('./geartest') }
   if (tests[process.env.NAQI_SELFTEST]) {
     const which = tests[process.env.NAQI_SELFTEST]()
     const test = async () => (await which).run(win, engine)

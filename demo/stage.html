@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Naqi demo stage</title>
+<!-- The demo video's stage, 1920 x 1080, one frame at a time: compose.cjs calls render(i) for every frame and
+     captures the page. Everything that moves is computed from the frame number, so each frame is exact. -->
+<style>
+  :root {
+    --bg: #060a15; --text: #eef2fa; --muted: #9aa6c0; --faint: #6c7895;
+    --clean: #34d399; --clean-deep: #10b981; --music: #a78bfa; --line: rgb(148 163 199 / 0.16);
+    --display: 'Segoe UI Variable Display', 'Segoe UI', 'Segoe UI Arabic', system-ui, sans-serif;
+    --font: 'Segoe UI Variable Text', 'Segoe UI', 'Segoe UI Arabic', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font); }
+  .stage { position: absolute; inset: 0; overflow: hidden; }
+  .glow { position: absolute; border-radius: 50%; filter: blur(110px); will-change: transform; }
+  .glow.g1 { width: 1100px; height: 700px; background: rgb(16 185 129 / 0.16); left: -260px; top: 560px; }
+  .glow.g2 { width: 1000px; height: 640px; background: rgb(139 92 246 / 0.17); left: 1180px; top: -280px; }
+  .waves { position: absolute; left: 0; bottom: 0; width: 1920px; height: 420px; opacity: 0.5; }
+  .waves path { fill: none; stroke-width: 1.4; }
+
+  /* header: brand on the left, chapter, fast-forward, keys */
+  .head { position: absolute; left: 0; right: 0; top: 0; height: 120px; display: flex; align-items: center; padding: 0 64px; gap: 22px; }
+  .brand { display: flex; align-items: center; gap: 12px; font: 600 26px var(--display); letter-spacing: -0.01em; }
+  .brand img { width: 38px; height: 38px; }
+  .brand .ar { color: var(--clean); font-weight: 500; }
+  .crumb { display: flex; align-items: center; gap: 14px; font: 500 22px var(--display); color: var(--muted); }
+  .crumb b { font: 700 16px var(--font); color: var(--clean); letter-spacing: 0.08em; padding: 5px 9px; border: 1px solid rgb(52 211 153 / 0.35); border-radius: 8px; }
+  .sep { width: 1px; height: 30px; background: var(--line); }
+  .ff { display: flex; align-items: center; gap: 12px; padding: 8px 16px 8px 12px; border-radius: 999px; background: rgb(167 139 250 / 0.12); border: 1px solid rgb(167 139 250 / 0.35); font: 600 19px var(--font); color: #d9ccff; }
+  .ff .chev { display: flex; width: 34px; overflow: hidden; }
+  .ff .chev svg { flex: none; }
+  .ff .real { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .keys { margin-left: auto; display: flex; gap: 10px; }
+  .key { font: 600 22px var(--font); padding: 9px 18px 11px; border-radius: 12px; color: var(--text);
+         background: linear-gradient(#1c2642, #131b33); border: 1px solid rgb(255 255 255 / 0.16); box-shadow: 0 4px 0 #0a0f1e, 0 10px 30px rgb(0 0 0 / 0.4); }
+
+  /* the app window */
+  .screen { position: absolute; left: 0; top: 0; transform-origin: 0 0; border-radius: 18px; overflow: hidden;
+            box-shadow: 0 0 0 1px rgb(255 255 255 / 0.09), 0 40px 120px -20px rgb(0 0 0 / 0.75), 0 0 80px -10px rgb(52 211 153 / 0.10); background: #0a0f1e; }
+  .chrome { height: 42px; display: flex; align-items: center; justify-content: center; background: #0b1122; color: #aab4cc; font: 500 15px var(--font); position: relative; border-bottom: 1px solid rgb(255 255 255 / 0.05); }
+  .chrome img { width: 18px; height: 18px; position: absolute; left: 14px; top: 12px; }
+  .chrome .ctl { position: absolute; right: 0; top: 0; height: 42px; display: flex; }
+  .chrome .ctl i { width: 58px; display: grid; place-items: center; }
+  .chrome .ctl i::before { content: ''; width: 11px; height: 11px; border: 1.3px solid #8f9ab4; border-radius: 2px; }
+  .chrome .ctl i:first-child::before { height: 0; border-width: 1.3px 0 0; border-radius: 0; }
+  .chrome .ctl i:last-child::before { border: none; background: linear-gradient(45deg, transparent 46%, #8f9ab4 46% 54%, transparent 54%), linear-gradient(-45deg, transparent 46%, #8f9ab4 46% 54%, transparent 54%); }
+  .rec { display: block; }
+  .shade { position: absolute; inset: 0; background: #050913; pointer-events: none; }
+  .cursor { position: absolute; left: 0; top: 0; width: 30px; height: 30px; transform-origin: 3px 3px; filter: drop-shadow(0 3px 6px rgb(0 0 0 / 0.45)); }
+  .ripple { position: absolute; border-radius: 50%; border: 3px solid var(--clean); }
+  .drag { position: absolute; display: flex; flex-direction: column; gap: 8px; transform-origin: 0 0; }
+  .drag div { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 12px; background: rgb(20 29 54 / 0.95); border: 1px solid rgb(52 211 153 / 0.45);
+              font: 600 18px var(--font); color: var(--text); box-shadow: 0 18px 40px rgb(0 0 0 / 0.5); white-space: nowrap; }
+  .drag svg { flex: none; }
+
+  /* caption under the window */
+  .cap { position: absolute; left: 50%; top: 1000px; display: flex; align-items: center; gap: 16px; padding: 14px 26px 15px 20px; border-radius: 999px;
+         background: rgb(13 19 37 / 0.82); border: 1px solid rgb(148 163 199 / 0.2); box-shadow: 0 20px 50px -10px rgb(0 0 0 / 0.6); white-space: nowrap;
+         font: 500 28px var(--display); letter-spacing: -0.005em; }
+  .cap .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--clean); box-shadow: 0 0 0 6px rgb(52 211 153 / 0.16); flex: none; }
+  .cap .w { display: inline-block; white-space: pre; }
+  .cap em { font-style: normal; color: var(--clean); }
+
+  /* chapter card over the frozen window */
+  .chapter { position: absolute; left: 0; right: 0; top: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .chapter .no { font: 700 30px var(--font); letter-spacing: 0.3em; color: var(--clean); margin-bottom: 18px; }
+  .chapter h2 { font: 650 92px var(--display); letter-spacing: -0.025em; line-height: 1.05; overflow: hidden; padding-bottom: 8px; }
+  .chapter h2 span { display: inline-block; white-space: pre; }
+  .chapter p { font: 400 32px var(--display); color: var(--muted); margin-top: 20px; max-width: 1300px; }
+  .chapter .rule { height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--clean), var(--music)); margin-top: 34px; width: 220px; transform-origin: 50% 50%; }
+
+  /* full cards: title, before / after, bridge, outro */
+  .card { position: absolute; inset: 0; }
+  .title { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .title img { width: 168px; height: 168px; }
+  .title h1 { font: 700 128px var(--display); letter-spacing: -0.03em; margin-top: 26px; display: flex; gap: 34px; align-items: baseline; }
+  .title h1 .ar { color: var(--clean); font-weight: 600; font-size: 112px; }
+  .title .tag { font: 500 44px var(--display); margin-top: 18px; letter-spacing: -0.01em; }
+  .title .tag em { font-style: normal; color: var(--clean); }
+  .title .tag span { display: inline-block; white-space: pre; }
+  .title .small { font: 500 22px var(--font); color: var(--faint); margin-top: 30px; letter-spacing: 0.14em; text-transform: uppercase; }
+  .bars { display: flex; align-items: center; gap: 9px; height: 120px; margin-top: 44px; }
+  .bars i { display: block; width: 12px; border-radius: 6px; background: var(--clean); }
+  .bars i.m { background: var(--music); }
+
+  .ba { display: flex; align-items: center; justify-content: center; }
+  .ba .frame { position: absolute; left: 260px; top: 150px; width: 1400px; height: 788px; border-radius: 22px; overflow: hidden; box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1), 0 40px 120px -20px rgb(0 0 0 / 0.8); }
+  .ba .frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ba .label { position: absolute; left: 260px; top: 58px; display: flex; align-items: center; gap: 20px; }
+  .ba .label b { font: 800 24px var(--font); letter-spacing: 0.22em; padding: 9px 16px; border-radius: 10px; }
+  .ba .label span { font: 500 34px var(--display); }
+  .ba.before .label b { color: #e3d8ff; background: rgb(167 139 250 / 0.18); border: 1px solid rgb(167 139 250 / 0.5); }
+  .ba.after .label b { color: #c9f7e6; background: rgb(52 211 153 / 0.16); border: 1px solid rgb(52 211 153 / 0.5); }
+  .ba .credit { position: absolute; right: 260px; top: 72px; font: 500 18px var(--font); color: var(--faint); }
+  .meters { position: absolute; left: 260px; right: 260px; top: 968px; display: flex; gap: 60px; }
+  .meter { flex: 1; display: flex; align-items: center; gap: 20px; }
+  .meter span { font: 600 22px var(--font); width: 92px; }
+  .meter .track { flex: 1; height: 54px; display: flex; align-items: center; gap: 4px; }
+  .meter .track i { flex: 1; border-radius: 3px; min-height: 4px; }
+  .meter.voice span { color: var(--clean); } .meter.voice i { background: var(--clean); }
+  .meter.music span { color: var(--music); } .meter.music i { background: var(--music); }
+
+  .bridge { display: flex; align-items: center; justify-content: center; font: 600 76px var(--display); letter-spacing: -0.02em; }
+  .bridge span { display: inline-block; white-space: pre; }
+  .bridge em { font-style: normal; color: var(--clean); }
+
+  .outro { padding: 130px 150px; display: flex; gap: 110px; align-items: center; }
+  .outro .stats { flex: 1.5; display: flex; flex-direction: column; }
+  .outro .row { display: flex; align-items: center; gap: 30px; padding: 22px 0; border-top: 1px solid var(--line); }
+  .outro .row:last-child { border-bottom: 1px solid var(--line); }
+  .outro .num { font: 700 92px var(--display); letter-spacing: -0.03em; width: 360px; flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .outro .num small { font-size: 52px; font-weight: 600; color: var(--muted); margin-left: 6px; }
+  .outro .row:nth-child(odd) .num { color: var(--clean); }
+  .outro .what { font: 400 28px var(--display); color: var(--muted); line-height: 1.35; flex: 1; }
+  .outro .what b { color: var(--text); font-weight: 600; }
+  .outro .side { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+  .outro .side h3 { font: 650 64px var(--display); letter-spacing: -0.02em; line-height: 1.1; }
+  .outro .side h3 em { font-style: normal; color: var(--clean); }
+  .outro .side p { font: 400 28px var(--display); color: var(--muted); margin-top: 24px; line-height: 1.4; }
+  .outro .side .stack { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 34px; }
+  .outro .side .stack span { font: 600 19px var(--font); padding: 8px 14px; border-radius: 9px; border: 1px solid var(--line); color: #c8d0e2; }
+
+  .credits { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .credits img { width: 110px; height: 110px; }
+  .credits h2 { font: 700 84px var(--display); letter-spacing: -0.03em; margin-top: 18px; }
+  .credits h2 .ar { color: var(--clean); margin-left: 20px; }
+  .credits .url { font: 500 34px var(--font); margin-top: 16px; color: var(--text); padding: 12px 26px; border-radius: 14px; border: 1px solid rgb(52 211 153 / 0.4); background: rgb(52 211 153 / 0.08); }
+  .credits .src { margin-top: 60px; font: 400 22px var(--font); color: var(--faint); line-height: 1.7; }
+  .credits .src b { color: var(--muted); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <div class="glow g1" id="g1"></div>
+  <div class="glow g2" id="g2"></div>
+  <svg class="waves" id="waves" viewBox="0 0 1920 420"></svg>
+
+  <div class="head" id="head">
+    <div class="brand"><img src="../src/renderer/assets/naqi.png" alt="" />Naqi <span class="ar" lang="ar">نقي</span></div>
+    <div class="sep" id="sep"></div>
+    <div class="crumb" id="crumb"><b id="crumb-no"></b><span id="crumb-title"></span></div>
+    <div class="ff" id="ff">
+      <span class="chev"><svg width="68" height="20" viewBox="0 0 68 20" id="chev"><path d="M2 2l8 8-8 8M12 2l8 8-8 8M36 2l8 8-8 8M46 2l8 8-8 8" fill="none" stroke="#c4b5fd" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span id="ff-x"></span><span class="real" id="ff-real"></span>
+    </div>
+    <div class="keys" id="keys"></div>
+  </div>
+
+  <div class="screen" id="screen">
+    <div class="chrome"><img src="../src/renderer/assets/naqi.png" alt="" />Naqi | نقي<span class="ctl"><i></i><i></i><i></i></span></div>
+    <img class="rec" id="rec" alt="" />
+    <div class="shade" id="shade"></div>
+    <div id="fx"></div>
+    <svg class="cursor" id="cursor" viewBox="0 0 30 30"><path d="M3 2.5v21.2l5.6-5.2 3.7 8.4 3.9-1.7-3.7-8.3 7.6-.5z" fill="#fff" stroke="#0b1122" stroke-width="1.6" stroke-linejoin="round"/></svg>
+    <div class="drag" id="drag"></div>
+  </div>
+
+  <div class="chapter" id="chapter"><div class="no" id="ch-no"></div><h2 id="ch-title"></h2><p id="ch-sub"></p><div class="rule" id="ch-rule"></div></div>
+  <div class="cap" id="cap"><span class="dot"></span><span id="cap-text"></span></div>
+
+  <div class="card title" id="c-title">
+    <img src="../src/renderer/assets/naqi.png" alt="" id="t-logo" />
+    <h1 id="t-name"><span>Naqi</span><span class="ar" lang="ar">نقي</span></h1>
+    <p class="tag" id="t-tag"></p>
+    <div class="bars" id="t-bars"></div>
+    <p class="small" id="t-small">Windows desktop app · runs on your graphics card · nothing uploaded</p>
+  </div>
+  <div class="card ba" id="c-ba">
+    <div class="label"><b id="ba-b"></b><span id="ba-text"></span></div>
+    <div class="credit">“Why is biodiversity important?” · The Royal Society · CC BY</div>
+    <div class="frame" id="ba-frame"><img id="ba-img" alt="" /></div>
+    <div class="meters">
+      <div class="meter voice"><span>Voice</span><div class="track" id="m-voice"></div></div>
+      <div class="meter music"><span>Music</span><div class="track" id="m-music"></div></div>
+    </div>
+  </div>
+  <div class="card bridge" id="c-bridge"><p id="bridge-text"></p></div>
+  <div class="card outro" id="c-outro">
+    <div class="stats" id="o-stats"></div>
+    <div class="side" id="o-side">
+      <h3>The music goes.<br><em>Every word stays.</em></h3>
+      <p>Mel-Band Roformer keeps the voices, Bandit v2 keeps the other sounds, and a last check mutes any moment where music still shows.</p>
+      <div class="stack"><span>Electron</span><span>HTML · CSS · JS</span><span>Python</span><span>PyTorch CUDA</span><span>yt-dlp</span><span>ffmpeg</span></div>
+    </div>
+  </div>
+  <div class="card credits" id="c-credits">
+    <img src="../src/renderer/assets/naqi.png" alt="" />
+    <h2>Naqi<span class="ar" lang="ar">نقي</span></h2>
+    <p class="url">github.com/yassinemaazaoui114-git/Naqi</p>
+    <p class="src" id="credits-src"></p>
+  </div>
+</div>
+
+<script>
+const FPS = 30
+const $ = (id) => document.getElementById(id)
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x))
+const out = (t) => 1 - (1 - clamp(t)) ** 4                 // strong ease-out: entrances
+const inOut = (t) => { t = clamp(t); return t < 0.5 ? 8 * t ** 4 : 1 - (-2 * t + 2) ** 4 / 2 }
+const inn = (t) => clamp(t) ** 3                             // exits
+const lerp = (a, b, t) => a + (b - a) * t
+const show = (el, on) => { el.style.display = on ? '' : 'none' }
+let TL, REC_W, REC_H, K, CHROME
+const BASE = { x: 0, y: 0 }
+
+// Words that rise into place one after another (t: seconds since the start; exitAt: seconds when they leave)
+function words(el, html) {
+  if (el.dataset.src === html) return [...el.querySelectorAll('.w')]
+  el.dataset.src = html
+  el.innerHTML = html.replace(/(<em>.*?<\/em>|[^\s<]+)(\s*)/g, (_, w, sp) => `<span class="w">${w}${sp}</span>`)
+  return [...el.querySelectorAll('.w')]
+}
+function rise(spans, t, { stagger = 0.045, dur = 0.5, dy = 26, exitAt = Infinity, exitDur = 0.32 } = {}) {
+  spans.forEach((s, i) => {
+    const a = out((t - i * stagger) / dur)
+    const e = inn((t - exitAt) / exitDur)
+    s.style.opacity = a * (1 - e)
+    s.style.transform = `translateY(${(1 - a) * dy - e * 14}px)`
+    s.style.filter = a < 1 ? `blur(${(1 - a) * 6}px)` : ''
+  })
+}
+
+window.init = (tl) => {
+  TL = tl
+  REC_W = tl.rec.w; REC_H = tl.rec.h
+  CHROME = 42
+  K = Math.min(1500 / REC_W, 830 / (REC_H + CHROME))   // the window's size on the stage
+  BASE.x = (1920 - REC_W * K) / 2
+  BASE.y = 128
+  $('screen').style.width = REC_W + 'px'
+  $('screen').style.height = REC_H + CHROME + 'px'
+  $('rec').style.width = REC_W + 'px'
+  $('rec').style.height = REC_H + 'px'
+  $('shade').style.top = CHROME + 'px'
+  $('cursor').style.width = $('cursor').style.height = 30 * tl.rec.scale + 'px'
+  // title bars: voices (green) stay, music (purple) falls away
+  const H = [0.35, 0.6, 0.9, 0.5, 1, 0.7, 0.4, 0.85, 0.55, 0.95, 0.45, 0.75, 0.3, 0.65, 0.9, 0.5, 0.8, 0.4, 0.6, 0.3]
+  $('t-bars').innerHTML = H.map((h, i) => `<i class="${i % 3 === 1 ? 'm' : ''}" data-h="${h}"></i>`).join('')
+  $('m-voice').innerHTML = '<i></i>'.repeat(48)
+  $('m-music').innerHTML = '<i></i>'.repeat(48)
+  $('credits-src').innerHTML = tl.credits
+  // background waves
+  let p = ''
+  for (let k = 0; k < 7; k++) p += `<path id="wv${k}" stroke="${k % 2 ? 'rgb(167 139 250 / 0.22)' : 'rgb(52 211 153 / 0.22)'}" />`
+  $('waves').innerHTML = p
+  $('o-stats').innerHTML = tl.stats.map((s) => `<div class="row"><div class="num">${s.num}<small>${s.unit}</small></div><div class="what">${s.what}</div></div>`).join('')
+}
+
+function background(t) {
+  $('g1').style.transform = `translate(${Math.sin(t * 0.21) * 120}px, ${Math.cos(t * 0.17) * 60}px)`
+  $('g2').style.transform = `translate(${Math.cos(t * 0.19) * 140}px, ${Math.sin(t * 0.23) * 70}px)`
+  for (let k = 0; k < 7; k++) {
+    let d = ''
+    for (let x = 0; x <= 1920; x += 40) {
+      const y = 260 + k * 18 + Math.sin(x / (260 + k * 30) + t * (0.35 + k * 0.05) + k) * (40 + k * 6) + Math.sin(x / 90 + t * 0.6) * 4
+      d += (x ? 'L' : 'M') + x + ' ' + y.toFixed(1)
+    }
+    $('wv' + k).setAttribute('d', d)
+  }
+}
+
+async function load(img, src) {
+  if (img.dataset.src === src) return
+  img.dataset.src = src
+  img.src = src
+  await img.decode().catch(() => {})
+}
+
+// ---------- One frame ----------
+window.render = async (i) => {
+  const f = TL.frames[i]
+  const t = i / FPS
+  background(t)
+  const inRec = f.r !== null && f.r !== undefined
+  for (const id of ['c-title', 'c-ba', 'c-bridge', 'c-outro', 'c-credits']) show($(id), false)
+  show($('chapter'), false)
+  show($('cap'), false)
+
+  // the window
+  show($('screen'), inRec || f.card === 'bridge')
+  show($('head'), inRec)
+  if (inRec || f.card === 'bridge') {
+    await load($('rec'), `${TL.recUrl}/${f.r ?? TL.firstRec}.jpg`)
+    let s = K * f.z
+    // zoom around the focus point: the focus stays where it was on the stage, moved a little toward the middle
+    const fx = BASE.x + f.fx * K
+    const fy = BASE.y + (f.fy + CHROME) * K
+    const pull = (f.z - 1) * 0.9
+    const cx = lerp(fx, 960, clamp(pull)), cy = lerp(fy, 560, clamp(pull))
+    let x = cx - (f.fx * s)
+    let y = cy - ((f.fy + CHROME) * s)
+    // keep the zoomed window inside the frame: whole width when it fits, never past the header
+    const W = REC_W * s, Hh = (REC_H + CHROME) * s
+    x = W <= 1860 ? clamp(x, 30, 1890 - W) : clamp(x, 1920 - W, 0)
+    y = clamp(y, Math.min(BASE.y, 1060 - Hh), BASE.y)
+    let op = 1
+    if (f.card === 'bridge') {   // the window rises in at the end of the bridge
+      const a = out((f.ct - (f.len - 0.9)) / 0.9)
+      y += (1 - a) * 900
+      op = a
+    }
+    const sc = $('screen')
+    sc.style.transform = `translate(${x}px, ${y}px) scale(${s})`
+    sc.style.opacity = op
+    // chapter: the window dims behind the title
+    let dim = 0
+    if (f.card === 'chapter') dim = Math.min(out(f.ct / 0.35), 1 - inOut((f.ct - (f.len - 0.45)) / 0.45)) * 0.78
+    $('shade').style.opacity = dim
+    // the pointer
+    const cur = $('cursor')
+    show(cur, !!f.c && f.card !== 'bridge')
+    if (f.c) {
+      const cs = TL.rec.scale
+      const px = f.c[0] * cs, py = f.c[1] * cs + CHROME
+      cur.style.transform = `translate(${px - 3}px, ${py - 3}px) scale(${f.c[2] ? 0.86 : 1})`
+      // click ripples
+      const fx = $('fx')
+      fx.innerHTML = ''
+      for (const c of TL.clicks) {
+        const age = (i - c.at) / FPS
+        if (age < 0 || age > 0.55) continue
+        const a = out(age / 0.55)
+        const r = (10 + a * 34) * cs
+        const el = document.createElement('div')
+        el.className = 'ripple'
+        el.style.cssText = `left:${c.x * cs - r}px;top:${c.y * cs + CHROME - r}px;width:${2 * r}px;height:${2 * r}px;opacity:${(1 - a) * 0.9}`
+        fx.append(el)
+      }
+      // files being dragged in
+      const drag = $('drag')
+      show(drag, !!f.d)
+      if (f.d) {
+        drag.innerHTML = f.d.map((n) => `<div><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5l5 2.5-5 2.5z" fill="#34d399"/></svg>${n}</div>`).join('')
+        drag.style.transform = `translate(${px + 26 * cs}px, ${py + 20 * cs}px) rotate(-3deg) scale(${cs})`
+      }
+    }
+  }
+
+  // header: chapter, fast-forward, keys
+  if (inRec) {
+    const ch = TL.chapters.filter((c) => c.at <= i).at(-1)
+    show($('crumb'), !!ch); show($('sep'), !!ch)
+    if (ch) {
+      $('crumb-no').textContent = ch.no
+      $('crumb-title').textContent = ch.title
+      const a = out((i - ch.at - ch.len) / FPS / 0.5)
+      $('crumb').style.opacity = a
+      $('crumb').style.transform = `translateX(${(1 - a) * -20}px)`
+    }
+    const ff = $('ff')
+    show(ff, !!f.ff)
+    if (f.ff) {
+      $('ff-x').textContent = `${f.ff}× faster`
+      $('ff-real').textContent = `real time ${f.ffReal.toFixed(0)} s`
+      $('chev').style.transform = `translateX(${-((t * 40) % 34)}px)`
+      const a = out(f.ffAge / 0.3)
+      ff.style.opacity = a
+      ff.style.transform = `scale(${0.9 + 0.1 * a})`
+    }
+    const keys = TL.keys.filter((k) => i >= k.at && i < k.at + 1.6 * FPS)
+    $('keys').innerHTML = keys.map((k) => {
+      const age = (i - k.at) / FPS
+      const a = out(age / 0.25) * (1 - inn((age - 1.25) / 0.35))
+      const down = age > 0.12 && age < 0.3 ? 4 : 0
+      return `<span class="key" style="opacity:${a};transform:translateY(${(1 - a) * -14 + down}px)">${k.label}</span>`
+    }).join('')
+  }
+
+  // caption under the window
+  const cap = TL.caps.find((c) => i >= c.from && i < c.to)
+  if (cap && inRec && f.card !== 'chapter') {
+    show($('cap'), true)
+    const lt = (i - cap.from) / FPS
+    const exitAt = (cap.to - cap.from) / FPS - 0.3
+    const spans = words($('cap-text'), cap.text)
+    rise(spans, lt - 0.12, { stagger: 0.035, dur: 0.45, dy: 16, exitAt, exitDur: 0.28 })
+    const a = out(lt / 0.4) * (1 - inn((lt - exitAt) / 0.3))
+    const el = $('cap')
+    el.style.opacity = a
+    el.style.transform = `translateX(-50%) translateY(${(1 - a) * 14}px) scale(${0.96 + 0.04 * a})`
+  }
+
+  // chapter title
+  if (f.card === 'chapter') {
+    const ch = TL.chapters.find((c) => c.at <= i && i < c.at + c.len)
+    show($('chapter'), true)
+    const ct = f.ct, exitAt = f.len - 0.42
+    $('ch-no').textContent = ch.no
+    const n = out((ct - 0.1) / 0.5) * (1 - inn((ct - exitAt) / 0.3))
+    $('ch-no').style.opacity = n
+    $('ch-no').style.transform = `translateY(${(1 - n) * 20}px)`
+    const spans = words($('ch-title'), ch.title)
+    rise(spans, ct - 0.1, { stagger: 0.05, dur: 0.5, dy: 70, exitAt: exitAt - 0.1, exitDur: 0.3 })
+    $('ch-sub').textContent = ch.sub
+    const s = out((ct - 0.35) / 0.45) * (1 - inn((ct - exitAt) / 0.3))
+    $('ch-sub').style.opacity = s
+    $('ch-sub').style.transform = `translateY(${(1 - s) * 16}px)`
+    const r = out((ct - 0.25) / 0.6) * (1 - inn((ct - exitAt) / 0.3))
+    $('ch-rule').style.transform = `scaleX(${r})`
+    $('ch-rule').style.opacity = r
+  }
+
+  // full cards
+  if (f.card === 'title') {
+    show($('c-title'), true)
+    const ct = f.ct, exitAt = f.len - 0.4
+    const e = inn((ct - exitAt) / 0.4)
+    const l = out(ct / 0.7)
+    $('t-logo').style.transform = `scale(${0.6 + 0.4 * l}) rotate(${(1 - l) * -12}deg)`
+    $('t-logo').style.opacity = l * (1 - e)
+    $('t-logo').style.filter = `blur(${(1 - l) * 10}px)`
+    const nm = out((ct - 0.2) / 0.6)
+    $('t-name').style.opacity = nm * (1 - e)
+    $('t-name').style.transform = `translateY(${(1 - nm) * 40 - e * 30}px)`
+    rise(words($('t-tag'), 'The music goes. <em>Every word stays.</em>'), ct - 0.55, { stagger: 0.06, dur: 0.6, dy: 30, exitAt: exitAt, exitDur: 0.3 })
+    // the bars: all sound together, then the purple ones (music) fall away
+    const fall = out((ct - 1.6) / 0.7)
+    ;[...$('t-bars').children].forEach((b, k) => {
+      const h = +b.dataset.h
+      const live = 0.55 + 0.45 * Math.abs(Math.sin(ct * 3.1 + k * 0.9))
+      const grow = out((ct - 0.7 - k * 0.025) / 0.45)
+      const music = b.classList.contains('m')
+      const hh = h * live * grow * (music ? 1 - fall : 1)
+      b.style.height = Math.max(music ? 0 : 6, hh * 120) + 'px'
+      b.style.opacity = (music ? 1 - fall * 0.85 : 1) * (1 - e)
+    })
+    const sm = out((ct - 1.7) / 0.5)
+    $('t-small').style.opacity = sm * (1 - e)
+  }
+
+  if (f.card === 'before' || f.card === 'after') {
+    show($('c-ba'), true)
+    const before = f.card === 'before'
+    const el = $('c-ba')
+    el.classList.toggle('before', before)
+    el.classList.toggle('after', !before)
+    $('ba-b').textContent = before ? 'BEFORE' : 'AFTER'
+    $('ba-text').innerHTML = before ? 'The original: a man speaking over music' : 'Cleaned by Naqi: <span style="color:var(--clean)">music gone, voice kept</span>'
+    await load($('ba-img'), `${TL.srcUrl}/${String(Math.min(TL.srcFrames, Math.floor(f.ct * FPS) + 1)).padStart(4, '0')}.jpg`)
+    const ct = f.ct, exitAt = f.len - 0.35
+    const a = out(ct / 0.5) * (1 - inn((ct - exitAt) / 0.35))
+    $('ba-frame').style.opacity = before ? a : 1 - inn((ct - exitAt) / 0.35)
+    $('ba-frame').style.transform = `scale(${before ? 0.96 + 0.04 * out(ct / 0.7) : 1})`
+    el.querySelector('.label').style.opacity = a
+    el.querySelector('.label').style.transform = `translateY(${(1 - a) * 16}px)`
+    // live meters from the real sound: voice level and the music that was removed
+    for (const [id, key] of [['m-voice', 0], ['m-music', 1]]) {
+      const bars = $(id).children
+      for (let k = 0; k < bars.length; k++) {
+        const j = i - (bars.length - 1 - k)
+        const v = j >= 0 ? (TL.levels[j]?.[key] ?? 0) : 0
+        bars[k].style.height = Math.max(4, v * 54) + 'px'
+        bars[k].style.opacity = 0.35 + 0.65 * (k / bars.length)
+      }
+    }
+    el.querySelector('.meters').style.opacity = a
+  }
+
+  if (f.card === 'bridge') {
+    show($('c-bridge'), true)
+    const spans = words($('bridge-text'), 'Here is <em>everything</em> it does')
+    rise(spans, f.ct, { stagger: 0.06, dur: 0.45, dy: 40, exitAt: f.len - 0.95, exitDur: 0.3 })
+  }
+
+  if (f.card === 'outro') {
+    show($('c-outro'), true)
+    const ct = f.ct, exitAt = f.len - 0.5
+    const e = inn((ct - exitAt) / 0.5)
+    ;[...$('o-stats').children].forEach((row, k) => {
+      const a = out((ct - 0.15 - k * 0.15) / 0.6)
+      row.style.opacity = a * (1 - e)
+      row.style.transform = `translateX(${(1 - a) * -60}px)`
+      const st = TL.stats[k]
+      const c = out((ct - 0.15 - k * 0.15) / 1.1)
+      row.querySelector('.num').firstChild.textContent = (st.value * c).toFixed(st.digits)
+    })
+    const s = out((ct - 0.7) / 0.7)
+    $('o-side').style.opacity = s * (1 - e)
+    $('o-side').style.transform = `translateY(${(1 - s) * 30}px)`
+  }
+
+  if (f.card === 'credits') {
+    show($('c-credits'), true)
+    const a = out(f.ct / 0.8)
+    const el = $('c-credits')
+    el.style.opacity = a * (1 - inn((f.ct - (f.len - 0.8)) / 0.8))
+    el.style.transform = `translateY(${(1 - a) * 30}px)`
+  }
+
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  return true
+}
+</script>
+</body>
+</html>

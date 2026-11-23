@@ -6,7 +6,9 @@
 import { hydrateIcons, icon } from './design/icons.js'
 import { setupThemeButton } from './design/theme.js'
 import { setupTips } from './design/tips.js'
+import { detailsButton } from './details.js'
 import * as library from './library.js'
+import * as pages from './pages.js'
 import * as player from './player.js'
 import * as report from './report.js'
 import { onRated, rate, rateEl, showRating } from './rating.js'
@@ -19,6 +21,7 @@ const AUDIO_EXTS = ['mp3', 'm4a', 'wav', 'flac', 'ogg', 'opus', 'aac', 'wma']
 const VIDEO_EXTS = ['mp4', 'mkv', 'webm', 'mov', 'avi', 'wmv', 'm4v']
 const MP3_QUALITIES = ['128 kbps', '192 kbps', '320 kbps']
 const MP4_QUALITIES = ['Best', '1080p', '720p', '480p', '360p']
+const JOB_WORDS = { play: 'Clean and play', files: 'cleaning files', link: 'cleaning a link' }
 const DEFAULTS = { format: 'mp4', mp3_quality: '192 kbps', mp4_quality: '1080p', files_format: 'mp4', files_size: 'Original' }
 
 const ext = (p) => (p.split('.').pop() || '').toLowerCase()
@@ -184,7 +187,61 @@ $('#paste').addEventListener('click', async () => {
   url.value = (await window.naqi.clipboardText()).trim()
   url.dispatchEvent(new Event('input'))
   url.focus()
+  asked(url.value)   // pasted by hand: no need to offer it as well
 })
+
+// ---------- A copied link (ROADMAP T10.4) ----------
+// When Naqi opens or comes back to the front with a video link on the clipboard, a toast offers to clean it; one
+// click is Clean and play. Each link is asked once (also after a restart), and one pasted or cleaned by hand is
+// not asked at all. Only a link to one video on a known video site counts: any other text or link stays quiet.
+const VIDEO_SITES = ['youtube.com', 'youtu.be', 'vimeo.com', 'dailymotion.com', 'dai.ly', 'tiktok.com', 'instagram.com',
+  'facebook.com', 'fb.watch', 'x.com', 'twitter.com', 'twitch.tv', 'reddit.com', 'soundcloud.com', 'bilibili.com', 'rumble.com']
+function videoLink(text) {
+  const s = (text || '').trim()
+  if (!isLink(s) || /\s/.test(s) || s.length > 2000) return null
+  let u
+  try { u = new URL(s) } catch { return null }
+  const host = u.hostname.toLowerCase()
+  if (!VIDEO_SITES.some((d) => host === d || host.endsWith('.' + d))) return null
+  if (isYouTube(s)) return u.searchParams.get('v') || /^\/(shorts|live|embed)\/[\w-]+/.test(u.pathname) || (host === 'youtu.be' && u.pathname.length > 1) ? s : null
+  return u.pathname.length > 1 ? s : null   // a site's front page is not a video
+}
+const ASKED_MAX = 30
+function askedList() {
+  try { return JSON.parse(state.settings.clip_asked || '[]') } catch { return [] }
+}
+function asked(link) {
+  const s = (link || '').trim()
+  if (!s) return
+  const list = askedList().filter((l) => l !== s)
+  remember({ clip_asked: JSON.stringify([...list, s].slice(-ASKED_MAX)) })
+}
+let checking = false
+async function offerCopiedLink() {
+  // Not while something is cleaned or files wait: the offer comes the next time Naqi is in front
+  if (checking || state.busy || state.files.length || state.engine.status !== 'ready') return
+  checking = true
+  try {
+    const link = videoLink(await window.naqi.clipboardOffer())
+    if (!link || askedList().includes(link) || url.value.trim() === link) return
+    asked(link)
+    toast('', 'Clean the link you copied?', link, '', {
+      label: 'Clean and play', glyph: 'play', ms: 12000,
+      run: () => {
+        if (state.busy || state.engine.status !== 'ready') return
+        if (pages.shown() !== 'home') pages.show('home')   // the job card is on Home; a playing item goes to the corner
+        state.files = []
+        drawFiles()
+        url.value = link
+        url.dispatchEvent(new Event('input'))
+        $('#whole').checked = false   // a video in a playlist: just that video
+        refresh()
+        start()
+      }
+    })
+  } catch { /* the clipboard could not be read: nothing to offer */ } finally { checking = false }
+}
+window.addEventListener('focus', offerCopiedLink)
 $('#url-clear').addEventListener('click', () => { url.value = ''; url.dispatchEvent(new Event('input')); url.focus() })
 
 // ---------- Own files ----------
@@ -345,6 +402,7 @@ function showJob({ title, item, tag }) {
   $('#job-tag').className = tag ? `tag tag-${tag.toLowerCase()}` : 'tag'
   $('#show').hidden = true
   $('#play-now').hidden = true
+  $('#job-details').hidden = true
   hideRating()
   progress(0, 'Starting…', true)
   $('#job-device').textContent = ''   // the engine light at the top already names the graphics card
@@ -387,6 +445,9 @@ function finish(kind, title, text) {
   $('#job-title').textContent = title
   $('#job-text').textContent = text
   $('#job-text').title = text
+  // An engine error can be reported: Copy details puts it on the clipboard with the versions
+  $('#job-details').hidden = kind !== 'error'
+  if (kind === 'error') $('#job-details').replaceChildren(detailsButton({ where: `Home, ${JOB_WORDS[state.jobKind] || 'cleaning'}`, title, text }))
 }
 
 function showDevice(numbers) {
@@ -402,6 +463,7 @@ async function start() {
   let spec, card
   const one = single()
   if (one && !isLink(one) && state.files.length === 0) { linkError('This does not look like a link. It should start with https://'); url.focus(); return }
+  if (isLink(url.value.trim()) && !state.files.length) asked(url.value)   // cleaned by hand: never offered after
   if (one) {
     const file = state.files[0]
     const video = file ? file.kind === 'video' : true
@@ -434,6 +496,7 @@ async function run(spec, card) {
   state.opened = false
   state.playRow = null
   state.job = { id: null, kind: spec.kind }
+  state.jobKind = spec.kind
   try {
     const started = await window.naqi.startJob(spec)
     state.job.id = started.id
@@ -501,7 +564,7 @@ function onPlayJob(j) {
   $('#play-now').hidden = !(j.row_id && (j.plays || j.state === 'done'))
   if (j.state === 'running' && j.plays && !state.opened) {
     state.opened = true
-    if (player.openId() === null) playItem(j.row_id)
+    if (player.openId() === null || player.inCorner()) playItem(j.row_id)
   }
 }
 $('#play-now').addEventListener('click', () => playItem(state.playRow))
@@ -519,7 +582,7 @@ async function playItem(id) {
     library.select(id)
   } catch (e) {
     const why = e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
-    if (why !== 'again') return toast('error', 'Could not play it', why)
+    if (why !== 'again') return toast('error', 'Could not play it', why, 'Player, opening an item')
     player.close()
     if (state.busy) return toast('error', 'Naqi is still busy cleaning', 'Play this again when it is done, or cancel it.')
     const it = library.item(id)
@@ -558,15 +621,14 @@ function hideRating() { jobRate.hidden = true }
 // Rated in the library: the card follows
 onRated(({ id, rating }) => { if (Number(jobRate.dataset.id) === id) showRating(jobRating, rating) })
 // Bad, wherever it was given: a bad file most likely has a slip to report (old SPEC R13), so the report opens with
-// it filled in. The player stops first.
+// it filled in. The player's item waits, paused, in the corner.
 onRated(({ id, rating }) => {
   if (rating !== 'bad') return
-  player.close({ keepPage: true })
+  player.pause()
   report.open({ id })
 })
 // Report here in the player: the moment is filled in too, and Back returns to the paused player
 window.addEventListener('naqi-report-here', (e) => report.open({ ...e.detail, back: 'player' }))
-$('#open-report').addEventListener('click', () => player.close({ keepPage: true }))
 $('#show').addEventListener('click', () => window.naqi.showInFolder(state.last))
 
 // ---------- Engine light: green graphics card, amber CPU only, red stopped, grey starting ----------
@@ -594,6 +656,9 @@ function showEngine(s) {
   $('#engine-text').textContent = text
   el.title = s.message || ''
   $('#engine-restart').hidden = s.status !== 'stopped'
+  const failed = s.status === 'stopped' || s.status === 'error'
+  if (failed && $('#engine-details').hidden) $('#engine-details').replaceChildren(detailsButton(() => ({ where: 'Engine', title: $('#engine-name').textContent, text: $('#engine-text').textContent }), { small: true }))
+  $('#engine-details').hidden = !failed
   if (state.busy && s.status !== 'ready' && s.status !== 'starting') {
     // The engine died during the job: its job is gone with it
     state.job = null
@@ -601,29 +666,43 @@ function showEngine(s) {
     finish('error', 'Something went wrong', 'The engine stopped during the cleaning. Naqi is starting it again; press the button to try once more.')
   }
   refresh()
+  if (s.status === 'ready' && document.hasFocus()) offerCopiedLink()   // Naqi just opened (or the engine is back)
 }
 $('#engine-restart').addEventListener('click', () => window.naqi.restartEngine())
 window.naqi.onEngineStatus(showEngine)
 
 // ---------- Toasts ----------
 // An error stays long enough to be read (and until the pointer leaves it); any toast can be closed. At most three.
+// where: an engine error, named for Copy details (the button under its text).
+// action: an offer ({ label, glyph, run, ms }): its button under the text runs it and closes the toast.
 const TOAST_MS = { error: 8000, '': 4000 }
-function toast(kind, title, text) {
+function toast(kind, title, text, where = '', action = null) {
   const t = document.createElement('div')
   t.className = 'msg toast'
   t.setAttribute('role', kind === 'error' ? 'alert' : 'status')
   if (kind) t.dataset.kind = kind
-  t.innerHTML = `${icon(kind === 'error' ? 'error' : 'info')}<div><p class="msg-title"></p><p class="msg-text"></p></div>
+  t.innerHTML = `${icon(kind === 'error' ? 'error' : action ? 'link' : 'info')}<div><p class="msg-title"></p><p class="msg-text"></p></div>
     <button class="btn btn-icon btn-sm toast-close" aria-label="Close">${icon('close', 'icon-sm')}</button>`
   $('.msg-title', t).textContent = title
   $('.msg-text', t).textContent = text
+  if (where) $('.msg-text', t).after(detailsButton({ where, title, text }))
+  if (action) {
+    t.classList.add('toast-offer')
+    $('.msg-text', t).title = text
+    const b = document.createElement('button')
+    b.className = 'btn btn-primary btn-sm toast-action'
+    b.innerHTML = `${action.glyph ? icon(action.glyph, 'icon-sm') : ''}<span></span>`
+    b.querySelector('span').textContent = action.label
+    b.addEventListener('click', () => { leave(); action.run() })
+    $('.msg-text', t).after(b)
+  }
   const leave = () => {
     if (t.classList.contains('is-leaving')) return
     t.classList.add('is-leaving')
     t.addEventListener('transitionend', () => t.remove(), { once: true })
     setTimeout(() => t.remove(), 400)   // also when no frame is drawn (window hidden)
   }
-  let timer = setTimeout(leave, TOAST_MS[kind] || TOAST_MS[''])
+  let timer = setTimeout(leave, action?.ms || TOAST_MS[kind] || TOAST_MS[''])
   t.addEventListener('pointerenter', () => clearTimeout(timer))
   t.addEventListener('pointerleave', () => { timer = setTimeout(leave, 2000) })
   $('.toast-close', t).addEventListener('click', leave)
@@ -634,7 +713,7 @@ function toast(kind, title, text) {
 // Anything that fails without its own message still says so, in plain words (the window never fails silently)
 window.addEventListener('unhandledrejection', (e) => {
   const why = String(e.reason?.message || e.reason || '').replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
-  toast('error', 'Something did not work', why || 'Please try again.')
+  toast('error', 'Something did not work', why || 'Please try again.', 'Window')
 })
 
 // ---------- Start ----------
@@ -650,6 +729,7 @@ async function init() {
   kbps.set(null, state.settings.mp3_quality)
   showFolder()
   player.setVolume(state.settings.volume)
+  player.setTheater(state.settings.theater === '1')
   showEngine(await window.naqi.engineStatus())
   library.load()
   url.focus()
