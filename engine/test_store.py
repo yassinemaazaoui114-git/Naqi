@@ -143,5 +143,23 @@ history.HISTORY_MAX_BYTES = 5 * 10**9
 check("clean-up never touches cases", os.path.isfile(copy) and len(cases.read_cases()) == 1)
 check("real limits are 14 days / 5 GB", history.HISTORY_DAYS == 14 and history.HISTORY_MAX_BYTES == 5 * 10**9)
 
+# ---- the keep rule from Settings (T11.2): 7 days deletes a 10-day-old cache that 14 days kept
+ten, ten_dir = cached_row("ten", 1000, days=10)
+history.clean_history()
+check("14 days keeps a 10-day-old cache", os.path.exists(ten_dir))
+history.set_keep(7, 5)
+history.clean_history()
+check("7 days deletes it", not os.path.exists(ten_dir) and history.keep_rule()["days"] == 7)
+on_disk = sum(os.path.getsize(os.path.join(d, f)) for d, _, fs in os.walk(history.HISTORY_DIR) for f in fs)
+check("keep_rule counts the kept bytes", history.keep_rule()["used"] == on_disk > 0 and history.keep_rule()["gb"] == 5)
+for bad in [(10, 5), (14, 3), ("x", 5)]:
+    try:
+        history.set_keep(*bad)
+        check(f"set_keep refuses {bad}", False)
+    except ValueError:
+        check(f"set_keep refuses {bad}", True)
+history.set_keep(14, 5)
+check("back to 14 days / 5 GB", history.HISTORY_DAYS == 14 and history.HISTORY_MAX_BYTES == 5 * 10**9)
+
 print(f"\n{'ALL PASSED' if not failed else f'{failed} FAILED'}  (test data in {TMP})")
 sys.exit(1 if failed else 0)

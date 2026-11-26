@@ -19,8 +19,10 @@ function findPython() {
 // Runs engine/server.py (or, in the installed app, the packed engine NaqiEngine.exe), keeps it running, and reports
 // its status: { status: 'starting' | 'ready' | 'error' | 'restarting' | 'stopped', gpu, message }
 export class Engine extends EventEmitter {
-  constructor(engineDir, exe = null) {
+  // env: extra environment for each start (the Settings page's device and keep rule, T11.2)
+  constructor(engineDir, exe = null, env = () => ({})) {
     super()
+    this.env = env
     this.dir = engineDir
     this.exe = exe
     this.status = { status: 'starting', gpu: null, message: null }
@@ -29,6 +31,7 @@ export class Engine extends EventEmitter {
     this.token = null
     this.restarts = []
     this.quitting = false
+    this.reloading = false
   }
 
   _set(patch) {
@@ -49,7 +52,7 @@ export class Engine extends EventEmitter {
     const child = spawn(python, this.exe ? [] : ['-u', join(this.dir, 'server.py')], {
       cwd: this.dir,
       env: { ...process.env, NAQI_TOKEN: this.token, NAQI_PARENT_PID: String(process.pid), PYTHONIOENCODING: 'utf-8',
-        PYTHONUNBUFFERED: '1' },
+        PYTHONUNBUFFERED: '1', ...this.env() },
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true
     })
@@ -74,6 +77,7 @@ export class Engine extends EventEmitter {
       this.child = null
       this.port = null
       if (this.quitting) return
+      if (this.reloading) { this.reloading = false; this.restarts = []; return this.start() }
       const last = stderr.trim().split(/\r?\n/).slice(-3).join(' ')
       this._died(`Engine stopped (exit code ${code})${last ? ': ' + last : ''}`)
     })
@@ -95,6 +99,17 @@ export class Engine extends EventEmitter {
     if (this.child) return
     this.restarts = []
     this.start()
+  }
+
+  // Start again with new settings (GPU or CPU, T11.2): asked to stop like on quit, then started at once
+  reload() {
+    const child = this.child
+    if (!child) return this.restart()
+    this.reloading = true
+    this._set({ status: 'starting', gpu: null, message: null })
+    const timer = setTimeout(() => child.kill(), STOP_WAIT_MS)
+    child.once('exit', () => clearTimeout(timer))
+    this.request('/shutdown', { method: 'POST' }).catch(() => child.kill())
   }
 
   request(path, options = {}) {
@@ -121,7 +136,10 @@ export class Engine extends EventEmitter {
     const range = request.headers.get('Range')
     try {
       const res = await this.request(`/media${path}`, { headers: range ? { Range: range } : {} })
-      return new Response(res.body, { status: res.status, headers: res.headers })
+      // Readable by the page with CORS (the player's Web Audio chain, T10.5c); only this app's pages can ask for it
+      const headers = new Headers(res.headers)
+      headers.set('Access-Control-Allow-Origin', '*')
+      return new Response(res.body, { status: res.status, headers })
     } catch {
       return new Response('engine not running', { status: 503 })
     }

@@ -19,6 +19,7 @@ const NO_PICTURE = "This video's picture can't be shown. The cleaned sound still
 
 const audio = new Audio()
 audio.preload = 'auto'
+audio.crossOrigin = 'anonymous'   // so Steady volume's Web Audio chain may read it (T10.5c)
 const video = $('#picture')
 const screen = $('#screen')
 const timebar = $('#timebar')
@@ -35,6 +36,7 @@ const p = {
   waiting: false,                    // the sound reached the clean edge and waits
   pic: null,                         // picture description from the engine
   using: null,                       // the picture now shown: 'part' | 'full' | 'stream' | null
+  streamFound: 0,                    // which address of a link's stream is shown (a new size is another one)
   partS: 0,                          // length of a first-part copy
   converted: false,                  // a copy was asked for after the file did not play as it is
   note: '', noteTimer: 0,
@@ -47,7 +49,7 @@ const p = {
 const stats = { firstPlaying: null, sync: [], waits: [], jumps: [] }
 window.naqiPlayerStats = () => ({ ...stats, now: performance.now(), at: audio.currentTime, using: p.using,
   waiting: p.waiting, ready: p.ready, live: p.live, length: p.length, mutes: p.mutes, id: p.id,
-  corner: !document.querySelector('#corner').hidden, paused: audio.paused, rate: audio.playbackRate, pitch: audio.preservesPitch })
+  corner: !document.querySelector('#corner').hidden, paused: audio.paused, ended: audio.ended, duration: audio.duration, readyState: audio.readyState, rate: audio.playbackRate, pitch: audio.preservesPitch })
 
 const clock = (s) => {
   s = Math.max(0, Math.floor(s || 0))
@@ -80,11 +82,14 @@ export async function open(id, job = null) {
   wokeAt = performance.now()
   showNote('')
   audio.src = `${MEDIA}/${id}/sound`
-  audio.volume = Number(volume.value)
+  setLevel(Number(volume.value))
   showPage(true)
   // The cleaning may have ended while this item was being opened: its "done" event came before p.id was set
   if (item.live && finished.has(id)) { p.live = false; sv.info.ready = sv.info.can }
+  const pq = quality
   setPicture(item.picture)
+  // The engine's size may be another one (it was restarted since): this item's stream is looked up at the chosen one
+  if (item.picture.type === 'stream' && item.picture.state !== 'error' && item.picture.height !== pq) setQuality(pq)
   p.mutes = { parts: [], upto: 0 }
   drawMutes()
   loadMutes()
@@ -137,6 +142,7 @@ function setCorner(on, instant = false) {
   if (on === inCorner()) return
   corner.getAnimations().forEach((a) => a.cancel())
   corner.classList.remove('is-entering', 'is-leaving')
+  releaseHold(true)
   if (on) {
     cornerPic.append(video)
     $('#corner-title').textContent = p.item.title
@@ -156,7 +162,7 @@ window.addEventListener('naqi-page', (e) => {
   setCorner(e.detail.page !== 'player' && p.id !== null, e.detail.instant)
 })
 $('#corner-open').addEventListener('click', () => showPage(true))
-$('#corner-title').addEventListener('click', () => { if (screen.dataset.kind === 'audio') showPage(true) })
+$('#corner-title').addEventListener('click', () => { if (corner.dataset.kind === 'audio') showPage(true) })
 cornerPlay.addEventListener('click', toggle)
 $('#corner-close').addEventListener('click', () => {
   // A short fade, then gone (the sound stops at once)
@@ -171,7 +177,11 @@ audio.addEventListener('play', () => window.dispatchEvent(new CustomEvent('naqi-
 
 function drawCorner() {
   if (!inCorner()) return
-  for (const k of ['kind', 'picture', 'waiting']) if (corner.dataset[k] !== screen.dataset[k]) corner.dataset[k] = screen.dataset[k] ?? ''
+  for (const k of ['kind', 'picture', 'waiting']) {
+    // The picture in the floating window (T10.7): the corner is the slim row of a sound
+    const v = k === 'kind' && inPip() ? 'audio' : screen.dataset[k] ?? ''
+    if (corner.dataset[k] !== v) corner.dataset[k] = v
+  }
   const len = length()
   const peek = corner.querySelector('.corner-peek')
   peek.style.setProperty('--played', len ? Math.min(1, audio.currentTime / len) : 0)
@@ -199,6 +209,9 @@ function soundOnly(text) {
 
 function dropPicture() {
   p.using = null
+  p.streamFound = 0
+  releaseHold(true)
+  if (inPip()) document.exitPictureInPicture().catch(() => {})
   video.pause()
   video.removeAttribute('src')
   video.load()
@@ -207,10 +220,19 @@ function dropPicture() {
 
 function showPicture(url, which) {
   const at = audio.currentTime
+  // Another size of the same stream (T10.5e): its last frame stays until the new one shows at the same moment
+  const swap = which === 'stream' && p.using === 'stream' && screen.dataset.picture === 'shown'
+  if (swap) holdFrame()
   p.using = which
   video.src = url
   video.addEventListener('loadedmetadata', () => {
-    video.currentTime = Math.min(at + 0.05, video.duration || at)
+    // A swap lands where the sound is now (it played on while the new stream opened), a little ahead for the seek
+    const to = swap ? audio.currentTime + 0.12 * audio.playbackRate : at + 0.05
+    video.currentTime = Math.min(to, video.duration || to)
+    if (swap) {
+      settleUntil = performance.now() + 1500   // the swap itself is not counted as sync
+      video.addEventListener('seeked', () => video.requestVideoFrameCallback(() => releaseHold()), { once: true })
+    }
     if (soundPlays()) video.play().catch(() => {})
   }, { once: true })
   video.addEventListener('loadeddata', () => { screen.dataset.picture = 'shown' }, { once: true })
@@ -240,9 +262,17 @@ function onStream(s) {
   if (s.row_id !== p.id || p.pic?.type !== 'stream') return
   p.pic = { ...p.pic, ...s }
   clearTimeout(streamTimer)
-  if (s.state === 'done') {
+  if (s.height !== undefined) quality = s.height   // a size that could not be loaded falls back to the one shown
+  drawQuality()
+  if (s.state === 'done' && s.found === p.streamFound) {   // the same address (the old one kept): nothing to load
+    if (s.text) showNote(s.text)
+  } else if (s.state === 'done') {
     const wait = Math.max(0, s.at * 1000 - Date.now())
-    streamTimer = setTimeout(() => { if (p.id === s.row_id) showPicture(`${MEDIA}/stream/${s.row_id}?n=${Date.now()}`, 'stream') }, wait)
+    streamTimer = setTimeout(() => {
+      if (p.id !== s.row_id) return
+      p.streamFound = s.found
+      showPicture(`${MEDIA}/stream/${s.row_id}?n=${Date.now()}`, 'stream')
+    }, wait)
     if (!p.using) screen.dataset.picture = 'preparing'
   } else if (s.state === 'error') {
     soundOnly(s.text || NO_PICTURE)
@@ -252,6 +282,56 @@ function onStream(s) {
   }
 }
 window.naqi.onStream(onStream)
+
+// ---------- Picture quality for links (ROADMAP T10.5e, SPEC R39) ----------
+// Auto (up to 1080p) or one size for a link's streamed picture. The engine looks the stream up at that size while the
+// old one plays on; then the picture swaps at the same moment, the old last frame held over it until the new one
+// shows. Only the sizes the link has are offered. Kept for the next links while Naqi is open, like Speed.
+let quality = null   // lines, or null = Auto
+let hold = null
+function holdFrame() {
+  releaseHold(true)
+  if (!video.videoWidth) return
+  const c = document.createElement('canvas')
+  c.className = 'picture-hold'
+  c.width = video.videoWidth
+  c.height = video.videoHeight
+  c.getContext('2d').drawImage(video, 0, 0)
+  video.after(c)
+  hold = { c, timer: setTimeout(() => releaseHold(), 8000) }
+}
+function releaseHold(instant = false) {
+  if (!hold) return
+  const { c, timer } = hold
+  hold = null
+  clearTimeout(timer)
+  if (instant) return c.remove()
+  c.classList.add('is-leaving')
+  setTimeout(() => c.remove(), 250)
+}
+function drawQuality() {
+  const s = p.pic?.type === 'stream' ? p.pic : null
+  const sizes = s?.heights || []
+  $('#gear-quality').hidden = !s || s.state === 'error' || sizes.length < 2   // one size only: nothing to pick
+  for (const b of $('#gear-qualities').querySelectorAll('[data-quality]')) {
+    const h = Number(b.dataset.quality) || null
+    b.hidden = h !== null && !sizes.includes(h)
+    b.setAttribute('aria-checked', h === quality)
+  }
+  placeDot($('#gear-qualities'), !gearOpen())
+  swapValue($('#gear-quality-value'), quality ? `${quality}p` : s?.got && s.height === null ? `Auto (${s.got}p)` : 'Auto')
+}
+async function setQuality(h) {
+  quality = h
+  drawQuality()
+  if (p.pic?.type !== 'stream' || p.pic.height === h) return
+  const id = p.id
+  try {
+    const desc = await window.naqi.openPlayer(id, 'quality', h)
+    if (p.id === id) onStream({ row_id: id, ...desc })
+  } catch (e) { if (p.id === id) showNote(cleanError(e)) }
+}
+window.naqiQuality = () => ({ quality, pic: p.pic, height: video.videoHeight, held: !!hold, using: p.using })
 
 // The browser could not show it: a stream is looked up once more; a file as it is gets a converted copy
 video.addEventListener('error', async () => {
@@ -276,7 +356,8 @@ function onFrame(_now, meta) {
     // At another speed (T10.5) the sound moves `rate` seconds a second, and the picture's own speed is that rate
     // nudged the same way
     const rate = audio.playbackRate
-    const a = audio.currentTime + rate * (meta.expectedDisplayTime - performance.now()) / 1000
+    // Through Steady volume's chain the sound is heard that much later than its own clock says
+    const a = audio.currentTime + rate * ((meta.expectedDisplayTime - performance.now()) / 1000 - steadyLag())
     const err = meta.mediaTime - a
     if (performance.now() > settleUntil) stats.sync.push([+a.toFixed(3), +err.toFixed(4)])
     if (Math.abs(err) > SYNC_JUMP_S) {
@@ -403,6 +484,67 @@ timebar.addEventListener('pointerup', (e) => {   // the jump comes on release (o
   jump(fracAt(e) * length())
 })
 
+// ---------- Steady volume (ROADMAP T10.5c) ----------
+// On, the sound goes through a small Web Audio chain in the window (no engine change): a slow compressor brings loud
+// voices down and its make-up gain lifts the quiet ones, a limiter keeps the peaks down, and a trim takes back the
+// make-up gain the browser adds to both, so loud voices stay about as loud as before and the quiet ones come up. The
+// chain is built the first time it is turned on and then stays (a sound given to Web Audio cannot go back), so off,
+// the sound passes it untouched. The volume is the chain's last gain, after the steadying, so the slider still turns
+// everything down evenly. Remembered (settings.json).
+const STEADY_COMP = { threshold: -36, knee: 12, ratio: 4, attack: 0.05, release: 0.6 }
+const STEADY_LIMIT = { threshold: -6, knee: 0, ratio: 20, attack: 0.001, release: 0.1 }
+const STEADY_TRIM = 0.5
+const steady = { on: false, ctx: null, src: null, first: null, last: null, mix: null, out: null, to: null }
+function steadyChain() {
+  if (steady.ctx) return true
+  try {
+    const ctx = new AudioContext()
+    const first = new DynamicsCompressorNode(ctx, STEADY_COMP)
+    const last = new GainNode(ctx, { gain: STEADY_TRIM })
+    first.connect(new DynamicsCompressorNode(ctx, STEADY_LIMIT)).connect(last)
+    const mix = new GainNode(ctx)
+    const out = new GainNode(ctx)
+    last.connect(mix).connect(out).connect(ctx.destination)
+    const src = ctx.createMediaElementSource(audio)
+    Object.assign(steady, { ctx, src, first, last, mix, out })
+    return true
+  } catch (e) {
+    console.warn('Steady volume could not start:', e)
+    return false
+  }
+}
+function routeSteady() {
+  if (steady.ctx.state === 'suspended') steady.ctx.resume().catch(() => {})
+  const to = steady.on ? steady.first : steady.mix
+  if (steady.to === to) return
+  if (steady.to) steady.src.disconnect(steady.to)   // only that link: the self-test listens on the sound too
+  steady.src.connect(to)
+  steady.to = to
+}
+// Seconds the chain adds before the sound is heard (the picture waits for it)
+const steadyLag = () => (steady.ctx ? steady.ctx.baseLatency + (steady.ctx.outputLatency || 0) : 0)
+export function setSteady(on, { save = false } = {}) {
+  if (on && !steadyChain()) on = false
+  steady.on = on
+  if (steady.ctx) { routeSteady(); setLevel(level) }
+  settleUntil = performance.now() + 1000
+  const item = $('#gear-steady')
+  item.setAttribute('aria-checked', on)
+  if (save) window.naqi.setSettings({ steady: on ? '1' : '0' })
+}
+$('#gear-steady').addEventListener('click', () => setSteady(!steady.on, { save: true }))
+audio.addEventListener('play', () => { if (steady.ctx?.state === 'suspended') steady.ctx.resume().catch(() => {}) })
+// The self-test listens before and after the chain
+window.naqiSteady = () => ({ on: steady.on, built: !!steady.ctx, state: steady.ctx?.state, lag: steadyLag(), level, volume: audio.volume })
+window.naqiSteadyNodes = () => steady
+
+// The sound's level: the element's own volume, or once the chain is built its last gain
+let level = 1
+function setLevel(v) {
+  level = v
+  if (steady.out) { audio.volume = 1; steady.out.gain.value = v } else audio.volume = v
+}
+
 // Volume and mute, remembered
 function showVolume() {
   volume.style.setProperty('--v', audio.muted ? 0 : volume.value)
@@ -412,8 +554,8 @@ function showVolume() {
   $('#mute').dataset.tip = audio.muted ? 'Unmute (M)' : 'Mute (M)'
 }
 volume.addEventListener('input', () => {
-  audio.volume = Number(volume.value)
-  if (audio.muted && audio.volume) audio.muted = false
+  setLevel(Number(volume.value))
+  if (audio.muted && level) audio.muted = false
   showVolume()
 })
 volume.addEventListener('change', () => window.naqi.setSettings({ volume: volume.value }))
@@ -425,7 +567,7 @@ let volumeShowTimer = 0
 const volumeGroup = $('#volume-group')
 function stepVolume(d) {
   volume.value = Math.min(1, Math.max(0, Number(volume.value) + d)).toFixed(2)
-  audio.volume = Number(volume.value)
+  setLevel(Number(volume.value))
   if (audio.muted && d > 0) audio.muted = false
   showVolume()
   volumeGroup.classList.add('is-open')
@@ -437,7 +579,7 @@ function stepVolume(d) {
 $('#mute').addEventListener('click', toggleMute)
 export function setVolume(value) {
   if (value !== undefined && value !== null && value !== '') volume.value = value
-  audio.volume = Number(volume.value)
+  setLevel(Number(volume.value))
   showVolume()
 }
 
@@ -455,11 +597,13 @@ document.addEventListener('fullscreenchange', () => {
 function toggleFull() {
   if (document.fullscreenElement) return document.exitFullscreen().catch((err) => console.warn('[naqi] fullscreen:', err.message))
   setKeys(false, { instant: true })
+  if (inPip()) document.exitPictureInPicture().catch(() => {})   // the picture comes back for the fullscreen
   screen.requestFullscreen().catch((err) => console.warn('[naqi] fullscreen:', err.message))
 }
 fullBtn.addEventListener('click', toggleFull)
 // Not on the bar or the settings menu; a click that only closed the menu does nothing more (like YouTube)
-const onPicture = (e) => !bar.contains(e.target) && !gearMenu.contains(e.target) && performance.now() - gearClosedAt > 400
+const onPicture = (e) => !bar.contains(e.target) && !gearMenu.contains(e.target) && !e.target.closest('#pip-back') &&
+  performance.now() - gearClosedAt > 400
 screen.addEventListener('dblclick', (e) => { if (onPicture(e)) toggleFull() })
 // One click on the picture pauses or plays (like YouTube: a double click's two clicks cancel out)
 screen.addEventListener('click', (e) => { if (onPicture(e)) toggle() })
@@ -502,13 +646,65 @@ function lightKey(k) {
   }
 }
 
+// ---------- Picture-in-picture (ROADMAP T10.7) ----------
+// The picture in Windows' small floating window, on top of every app (the corner, T10.2c, stays inside Naqi). It is the
+// same <video>, so the same sync keeps it with the sound, also with Naqi minimized. The floating window's play / pause
+// plays or pauses the sound, and so does its close (like a browser's); its "back" button and P bring the picture back
+// with the sound going on. The picture's own sound (the original, with the music) stays muted whatever it offers.
+const pipItem = $('#gear-pip')
+const inPip = () => document.pictureInPictureElement === video
+const pipReady = () => p.id !== null && screen.dataset.kind === 'video' && screen.dataset.picture === 'shown' && video.readyState >= 1
+let pipLeftAt = -Infinity
+export async function setPip(on) {
+  if (on === inPip()) return
+  if (!on) return document.exitPictureInPicture().catch(() => {})
+  if (!pipReady()) return showNote(screen.dataset.kind === 'video' ? 'The picture is not ready yet.' : 'A sound has no picture to float.')
+  setGear(false, { instant: true })
+  setKeys(false, { instant: true })
+  if (document.fullscreenElement) await document.exitFullscreen().catch(() => {})
+  try {
+    await video.requestPictureInPicture()
+  } catch (e) {
+    showNote(`Picture-in-picture did not open: ${e.message}`)
+  }
+}
+function drawPip() {
+  const on = inPip()
+  screen.dataset.pip = on
+  pipItem.setAttribute('aria-checked', on)
+  pipItem.hidden = screen.dataset.kind !== 'video' || !document.pictureInPictureEnabled
+  pipItem.disabled = !on && !pipReady()
+  drawCorner()
+}
+pipItem.addEventListener('click', () => setPip(!inPip()))
+$('#pip-back').addEventListener('click', () => setPip(false))
+video.addEventListener('enterpictureinpicture', () => { settleUntil = performance.now() + 1000; drawPip() })
+video.addEventListener('leavepictureinpicture', () => {
+  pipLeftAt = performance.now()
+  settleUntil = performance.now() + 1000   // the picture moving back may cost a frame: not counted as sync
+  drawPip()
+  setTimeout(followSound, 350)   // after a close's own pause (below), the picture follows the sound again
+})
+// The floating window's buttons act on the picture: they are passed on to the sound. Naqi's own pauses come when the
+// sound does not play (or the picture reloads), so a pause while it plays is the floating window's (or its close).
+video.addEventListener('pause', () => {
+  const ours = !soundPlays() || video.readyState < 2 || (p.using === 'part' && audio.currentTime > p.partS - 0.3)
+  if (!ours && (inPip() || performance.now() - pipLeftAt < 300)) audio.pause()
+})
+video.addEventListener('play', () => {
+  if (!inPip()) return
+  if (audio.paused) toggle()
+  else if (!soundPlays()) video.pause()   // the sound waits at the clean edge: the picture waits with it
+})
+video.addEventListener('volumechange', () => { if (!video.muted) video.muted = true })
+window.naqiPip = () => ({ on: inPip(), ready: pipReady(), shown: screen.dataset.pip, item: !pipItem.hidden, disabled: pipItem.disabled, muted: video.muted, vpaused: video.paused })
+
 // ---------- Settings (ROADMAP T10.5) ----------
 // The gear opens a small menu like YouTube's: a list of settings, each opening its own list in the same card (Back
 // returns). It lives in the screen (so it stays in fullscreen) and moves into the corner with the picture. Keys: the
 // arrows move in it, Right / Enter open, Left goes back, Escape closes; a click outside closes it.
 const gearMenu = $('#gear-menu')
 const gearButtons = [$('#gear-toggle'), $('#corner-gear')]
-const gearDot = $('.gear-dot')
 let gearClosedAt = 0   // a click outside closed it: that click does nothing else
 const gearOpen = () => gearMenu.dataset.open === 'true'
 const gearPanel = (name = gearMenu.dataset.panel) => gearMenu.querySelector(`.gear-panel[data-name="${name}"]`)
@@ -527,6 +723,7 @@ function setGear(open, { instant = false } = {}) {
     ;(inCorner() ? corner : screen).append(gearMenu)
     gearMenu.dataset.panel = 'main'
     $('#gear-report-value').textContent = clock(audio.currentTime || 0)
+    drawPip()
     gearMenu.inert = false
     sizeGear(false)
     void gearMenu.offsetWidth
@@ -544,7 +741,8 @@ function showGearPanel(name) {
   const from = gearMenu.dataset.panel
   gearMenu.dataset.panel = name
   sizeGear(true)
-  if (name === 'speed') placeDot(true)
+  const list = gearPanel().querySelector('.gear-choices')
+  if (list) placeDot(list, true)
   const target = name === 'main' ? gearPanel().querySelector(`[data-go="${from}"]`)
     : gearPanel().querySelector('[aria-checked="true"]') || gearPanel().querySelector('.gear-item')
   target.focus({ preventScroll: true })
@@ -564,6 +762,14 @@ gearMenu.addEventListener('click', (e) => {
     setSpeed(Number(item.dataset.speed))
     // The dot slides to the new speed, then the list goes back to the settings, which show the new value
     setTimeout(() => { if (gearOpen() && gearMenu.dataset.panel === 'speed') showGearPanel('main') }, 260)
+  }
+  if (item.dataset.quality !== undefined) {
+    setQuality(Number(item.dataset.quality) || null)
+    setTimeout(() => { if (gearOpen() && gearMenu.dataset.panel === 'quality') showGearPanel('main') }, 260)
+  }
+  if (item.dataset.sleep) {
+    setSleep(item.dataset.sleep)
+    setTimeout(() => { if (gearOpen() && gearMenu.dataset.panel === 'sleep') showGearPanel('main') }, 260)
   }
 })
 gearMenu.addEventListener('keydown', (e) => {
@@ -591,10 +797,20 @@ document.addEventListener('pointerdown', (e) => {
 // sound at the same rate (onFrame). Kept while Naqi is open, for the next item too (like YouTube), not after a restart.
 audio.preservesPitch = true
 let speed = 1
-function placeDot(instant = false) {
-  const on = $('#gear-speeds [aria-checked="true"]')
-  gearDot.toggleAttribute('data-instant', instant)
-  gearDot.style.setProperty('--y', `${on.offsetTop}px`)
+// The green dot of a list (speeds, sleep times) slides to its chosen item
+function placeDot(list, instant = false) {
+  const on = list.querySelector('[aria-checked="true"]')
+  const dot = list.querySelector('.gear-dot')
+  dot.toggleAttribute('data-instant', instant)
+  dot.style.setProperty('--y', `${on.offsetTop}px`)
+}
+// A setting's value in the main list changes with a short swap
+function swapValue(el, text) {
+  if (el.textContent === text) return
+  el.textContent = text
+  el.classList.remove('is-swapping')
+  void el.offsetWidth
+  el.classList.add('is-swapping')
 }
 function setSpeed(r) {
   speed = r
@@ -605,19 +821,69 @@ function setSpeed(r) {
   settleUntil = performance.now() + 1000
   integ = 0
   for (const b of $('#gear-speeds').querySelectorAll('[data-speed]')) b.setAttribute('aria-checked', Number(b.dataset.speed) === r)
-  placeDot()
-  const value = $('#gear-speed-value')
-  value.textContent = r === 1 ? 'Normal' : `${r}x`
-  value.classList.remove('is-swapping')
-  void value.offsetWidth
-  value.classList.add('is-swapping')
+  placeDot($('#gear-speeds'))
+  swapValue($('#gear-speed-value'), r === 1 ? 'Normal' : `${r}x`)
 }
 setSpeed(1)
 window.naqiSpeed = () => speed
 
+// Sleep timer (ROADMAP T10.5b): after 15 / 30 / 60 min of playing, or at the end of the video, the sound pauses. It
+// counts only while the sound plays (a pause or a wait at the clean edge stops it), in real minutes at any speed, and
+// fades the sound out over its last seconds, so falling asleep is not cut off by a sudden stop. While it runs, a small
+// chip on the bar and the menu show what is left. Like Speed it stays for the next item while Naqi is open.
+const SLEEP_FADE_S = 8
+const sleepChip = $('#sleep-chip')
+const sl = { mode: '0', left: 0, last: 0, minute: 60 }   // left: seconds of playing to go; minute: shorter in the self-test
+const sleepPlays = () => p.id !== null && !audio.paused && !audio.ended && !p.waiting
+function setSleep(mode) {
+  sl.mode = String(mode)
+  sl.left = sl.mode === '0' || sl.mode === 'end' ? 0 : Number(sl.mode) * sl.minute
+  sl.last = performance.now()
+  setLevel(Number(volume.value))   // a fade that was under way ends
+  for (const b of $('#gear-sleeps').querySelectorAll('[data-sleep]')) b.setAttribute('aria-checked', b.dataset.sleep === sl.mode)
+  placeDot($('#gear-sleeps'))
+  drawSleep()
+}
+function drawSleep() {
+  const on = sl.mode !== '0'
+  const text = sl.mode === 'end' ? 'end of video' : on ? clock(Math.ceil(sl.left)) : 'Off'
+  const value = $('#gear-sleep-value')
+  if (on && value.textContent !== 'Off' && value.textContent !== text) value.textContent = text   // the countdown ticks
+  else swapValue(value, text)
+  if (sleepChip.hidden === on) {
+    sleepChip.hidden = !on
+    if (on) { sleepChip.classList.remove('is-entering'); void sleepChip.offsetWidth; sleepChip.classList.add('is-entering') }
+  }
+  $('#sleep-left').textContent = sl.mode === 'end' ? 'end' : text
+  sleepChip.dataset.fading = on && sl.mode !== 'end' && sl.left <= SLEEP_FADE_S
+}
+function sleepNow() {
+  setSleep('0')
+  audio.pause()
+  showNote('Sleep timer: the sound is paused.')
+}
+setInterval(() => {   // not tied to frames, so it still counts with the window minimized
+  const now = performance.now()
+  const dt = (now - sl.last) / 1000
+  sl.last = now
+  if (sl.mode === '0' || sl.mode === 'end' || !sleepPlays()) return
+  sl.left = Math.max(0, sl.left - dt)
+  if (sl.left <= 0) return sleepNow()
+  setLevel(Number(volume.value) * Math.min(1, sl.left / SLEEP_FADE_S))
+  drawSleep()
+}, 200)
+audio.addEventListener('ended', () => { if (sl.mode === 'end') { setSleep('0'); showNote('Sleep timer: the video ended.') } })
+sleepChip.addEventListener('click', () => {
+  setGear(true)
+  showGearPanel('sleep')
+})
+setSleep('0')
+// The self-test runs the timer with short "minutes"
+window.naqiSleep = (minuteS) => { if (minuteS) sl.minute = minuteS; return { mode: sl.mode, left: sl.left, volume: level } }
+
 // Keys while the player is open and no other control takes the key (ROADMAP T10.1): Space / K play / pause,
 // M mute (old Naqi), Up / Down volume, Left / Right 5 s, Shift + arrows and J / L 10 s (like YouTube), F fullscreen,
-// T theater mode, I miniplayer (the corner), ? the keys card,
+// T theater mode, I miniplayer (the corner), P picture-in-picture, ? the keys card,
 // Escape back.
 // Jumps go through jump(), so they stay inside the clean part like the time bar. A text box keeps its keys.
 const STEP_S = 5
@@ -661,7 +927,7 @@ document.addEventListener('keydown', (e) => {
   }
   if (e.shiftKey) return
   if (key === ' ' && !(el && el.tagName === 'BUTTON')) { e.preventDefault(); lightKey('space'); return toggle() }
-  if (key.length !== 1 || !'kjlmfti'.includes(key)) return
+  if (key.length !== 1 || !'kjlmftip'.includes(key)) return
   if ((key === 't' || key === 'i') && document.fullscreenElement) return   // their buttons are out of sight there too
   lightKey(key)
   if (key === 'k') toggle()
@@ -670,6 +936,7 @@ document.addEventListener('keydown', (e) => {
   else if (key === 'm') toggleMute()
   else if (key === 'f') toggleFull()
   else if (key === 't') setTheater(!theater, { save: true })
+  else if (key === 'p') setPip(!inPip())
   else if (key === 'i') { e.preventDefault(); showPage(false, true) }   // its letter must not land in Home's link box
 })
 
@@ -712,11 +979,23 @@ async function loadMutes() {
   }
 }
 
+// Muted marks on / off (ROADMAP T10.5d): off, the bar is plain and hovering gives only the time. Remembered
+// (settings.json), on unless turned off.
+let marksOn = true
+export function setMarks(on, { save = false } = {}) {
+  marksOn = on
+  $('#gear-marks').setAttribute('aria-checked', on)
+  drawMutes()
+  if (!on) showSpan(null)
+  if (save) window.naqi.setSettings({ marks: on ? '1' : '0' })
+}
+$('#gear-marks').addEventListener('click', () => setMarks(!marksOn, { save: true }))
+
 // The parts in px of the time bar, short ones widened around their middle
 function mutePx() {
   const len = length()
   const w = lines.clientWidth
-  if (!len || !w) return []
+  if (!marksOn || !len || !w) return []
   return p.mutes.parts.map(([a, b]) => {
     const x0 = (a / len) * w
     const x1 = (b / len) * w
@@ -728,7 +1007,7 @@ function mutePx() {
 let muteKey = ''
 function drawMutes() {
   const w = lines.clientWidth
-  const key = `${w}|${length()}|${p.mutes.parts.length}|${p.mutes.parts.at(-1)?.[1]}`
+  const key = `${marksOn}|${w}|${length()}|${p.mutes.parts.length}|${p.mutes.parts.at(-1)?.[1]}`
   if (key === muteKey) return
   muteKey = key
   const px = mutePx()
@@ -901,7 +1180,7 @@ screen.addEventListener('pointerdown', () => wake())
 screen.addEventListener('pointerleave', () => { if (!barNeeded()) wokeAt = -Infinity })   // the mouse left: hide now
 bar.addEventListener('focusin', () => wake())
 const barNeeded = () => screen.dataset.kind !== 'video' || audio.paused || audio.ended || p.waiting || p.dragging ||
-  bar.matches(':hover') || keysOpen() || gearOpen() || saveToggle.getAttribute('aria-expanded') === 'true'
+  bar.matches(':hover') || inPip() || keysOpen() || gearOpen() || saveToggle.getAttribute('aria-expanded') === 'true'
 function drawBar() {
   const now = performance.now()
   if (barNeeded()) wokeAt = Math.max(wokeAt, now)   // the wait starts once nothing holds the bar any more

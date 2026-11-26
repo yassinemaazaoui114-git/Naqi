@@ -12,8 +12,10 @@ import * as library from './library.js'
 import * as pages from './pages.js'
 import * as player from './player.js'
 import * as report from './report.js'
+import './settings.js'
 import { onRated, rate, rateEl, showRating } from './rating.js'
 import { seg } from './seg.js'
+import { setupSide } from './side.js'
 
 const $ = (sel, root = document) => root.querySelector(sel)
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)]
@@ -368,6 +370,12 @@ function showFolder() {
   el.textContent = state.settings.folder
   el.title = state.settings.folder
 }
+// The Settings page changed a choice Home shows too (T11.2)
+window.addEventListener('naqi-settings', (e) => {
+  Object.assign(state.settings, e.detail)
+  showFolder()
+  refresh()
+})
 $('#change-folder').addEventListener('click', async () => {
   const next = await window.naqi.chooseFolder()
   if (next) { state.settings = { ...state.settings, ...next }; showFolder(); refresh() }
@@ -643,7 +651,8 @@ function showEngine(s) {
   if (s.status === 'ready') {
     look = gpu?.device === 'cuda' ? 'gpu' : 'cpu'
     name = gpu?.device === 'cuda' ? gpu.name : 'CPU only'
-    text = gpu?.device === 'cuda' ? `Graphics card in use${gpu.vram_total_mb ? ` · ${Math.round(gpu.vram_total_mb / 1024)} GB` : ''}` : 'No graphics card found · slower'
+    text = gpu?.device === 'cuda' ? `Graphics card in use${gpu.vram_total_mb ? ` · ${Math.round(gpu.vram_total_mb / 1024)} GB` : ''}`
+      : gpu?.chosen === 'cpu' ? 'Chosen in Settings · slower' : 'No graphics card found · slower'
   } else if (s.status === 'restarting') {
     name = 'Engine stopped'
     text = 'Starting it again…'
@@ -730,8 +739,11 @@ async function init() {
   vsize.set(null, state.settings.files_size)
   kbps.set(null, state.settings.mp3_quality)
   showFolder()
+  setupSide({ closed: state.settings.sidebar === 'closed', onSave: (sidebar) => window.naqi.setSettings({ sidebar }) })
   player.setVolume(state.settings.volume)
   player.setTheater(state.settings.theater === '1')
+  player.setSteady(state.settings.steady === '1')
+  player.setMarks(state.settings.marks !== '0')
   showEngine(await window.naqi.engineStatus())
   library.load()
   url.focus()

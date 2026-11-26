@@ -16,6 +16,8 @@ HISTORY_DB = os.path.join(DATA_DIR, "history.db")
 HISTORY_DIR = os.path.join(DATA_DIR, "history")
 HISTORY_DAYS = 14                 # kept sounds older than this are deleted...
 HISTORY_MAX_BYTES = 5 * 10**9     # ...and the oldest ones too while all kept sounds together are bigger than this
+KEEP_DAYS = (7, 14, 30, 90)       # what the Settings page offers (T11.2); 2 weeks / 5 GB stays the default
+KEEP_GB = (2, 5, 10, 20)
 RATINGS = [("bad", "Bad"), ("good", "Good"), ("perfect", "Perfect")]
 LIBRARY_MAX = 500                 # newest cleaned files shown in the library (SPEC R14)
 CACHE_NAME = "cleaned.wav"        # "Clean and play": the cleaned sound, in the item's history folder (SPEC R14d)
@@ -166,6 +168,27 @@ def set_rating(row_id, rating):
 
 def mark_reported(row_id):
     _history("UPDATE files SET reported = 1 WHERE id = ?", (row_id,))
+
+
+def set_keep(days, gb):
+    """The keep rule chosen in Settings (SPEC R43). Values not offered there are refused."""
+    global HISTORY_DAYS, HISTORY_MAX_BYTES
+    days, gb = int(days), int(gb)
+    if days not in KEEP_DAYS or gb not in KEEP_GB:
+        raise ValueError(f"Keep for {KEEP_DAYS} days and at most {KEEP_GB} GB")
+    HISTORY_DAYS, HISTORY_MAX_BYTES = days, gb * 10**9
+
+
+def keep_rule():
+    """The keep rule in use and how much the kept sounds take now (bytes)."""
+    used = sum(os.path.getsize(f) for f in glob.glob(os.path.join(HISTORY_DIR, "*", "*")) if os.path.isfile(f))
+    return {"days": HISTORY_DAYS, "gb": HISTORY_MAX_BYTES // 10**9, "used": used}
+
+
+try:   # the window passes the remembered choice when it starts the engine
+    set_keep(os.environ.get("NAQI_KEEP_DAYS") or HISTORY_DAYS, os.environ.get("NAQI_KEEP_GB") or HISTORY_MAX_BYTES // 10**9)
+except ValueError:
+    pass   # not one of the offered values: the default stays
 
 
 def clean_history():

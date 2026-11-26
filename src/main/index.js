@@ -1,14 +1,19 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, protocol, shell } from 'electron'
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, normalize } from 'node:path'
 import { details, remember } from './details'
 import { Engine } from './engine'
 
 // Installed (T7.1): the engine is packed into resources\engine\NaqiEngine.exe; in dev it is engine\server.py
+// Each start gets the Settings page's device and keep rule (T11.2)
+const engineEnv = () => {
+  const s = loadSettings()
+  return { NAQI_DEVICE: s.device === 'cpu' ? 'cpu' : '', NAQI_KEEP_DAYS: s.keep_days || '', NAQI_KEEP_GB: s.keep_gb || '' }
+}
 const engine = app.isPackaged
-  ? new Engine(join(process.resourcesPath, 'engine'), join(process.resourcesPath, 'engine', 'NaqiEngine.exe'))
-  : new Engine(join(app.getAppPath(), 'engine'))
+  ? new Engine(join(process.resourcesPath, 'engine'), join(process.resourcesPath, 'engine', 'NaqiEngine.exe'), engineEnv)
+  : new Engine(join(app.getAppPath(), 'engine'), null, engineEnv)
 
 // The demo recorder (NAQI_SELFTEST=demo) needs every frame painted, even while the window is covered
 if (process.env.NAQI_SELFTEST === 'demo') {
@@ -20,8 +25,9 @@ if (process.env.NAQI_SELFTEST === 'demo') {
 
 // The player's <audio> and <video> read the engine's media through naqi-media://engine/<path>: the main process
 // adds the token, so the page never holds it. stream: true lets the media elements read it piece by piece.
+// corsEnabled: the player's sound may go through Web Audio (Steady volume, T10.5c), which needs it read with CORS.
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'naqi-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }
+  { scheme: 'naqi-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, corsEnabled: true } }
 ])
 
 // The theme button's choice (system / light / dark), kept in Electron's user-data folder. Setting
@@ -44,8 +50,11 @@ function setTheme(mode) {
 // The Home page's choices (format, quality, sizes, save folder, last files folder), kept like the theme.
 // Saved files go into a folder per day inside `folder` (old Naqi SPEC R10); default Videos\Naqi.
 // clip_asked: the copied links Home already offered to clean (T10.4, a JSON list), so each is asked once.
+// The Settings page (T11.2) shares folder and mp3_quality with Home, and adds keep_days / keep_gb (how long and how
+// much cleaned sound is kept, default 14 / 5) and device ('gpu' | 'cpu').
 const settingsFile = () => join(app.getPath('userData'), 'settings.json')
-const SETTINGS = ['folder', 'format', 'mp3_quality', 'mp4_quality', 'files_format', 'files_size', 'files_folder', 'volume', 'theater', 'clip_asked']
+const SETTINGS = ['folder', 'format', 'mp3_quality', 'mp4_quality', 'files_format', 'files_size', 'files_folder', 'volume', 'theater', 'steady', 'marks', 'clip_asked', 'sidebar',
+  'keep_days', 'keep_gb', 'device']
 function readSaved() {
   try { return JSON.parse(readFileSync(settingsFile(), 'utf8')) } catch { return {} /* first start */ }
 }
@@ -88,6 +97,7 @@ async function chooseFolder(win) {
 // Show a saved file in Explorer; its folder when the file is gone (or the folder itself for a folder path).
 function showInFolder(path) {
   const p = normalize(String(path || ''))
+  if (p && existsSync(p) && statSync(p).isDirectory()) return shell.openPath(p)   // Settings' Save to folder
   if (p && existsSync(p) && !p.endsWith('\\')) return shell.showItemInFolder(p)
   const folder = p && existsSync(dirname(p)) ? dirname(p) : loadSettings().folder
   mkdirSync(folder, { recursive: true })
@@ -173,8 +183,9 @@ app.whenReady().then(async () => {
   ipcMain.handle('job-cancel', (_event, id) => engine.call(`/jobs/${Number(id)}/cancel`, {}))
   ipcMain.handle('picture-start', (_event, spec) => engine.call('/pictures', spec))
   ipcMain.handle('picture-cancel', (_event, id) => engine.call(`/pictures/${Number(id)}/cancel`, {}))
-  ipcMain.handle('player-open', (_event, id, action) =>
-    engine.call(`/player/${Number(id)}${['convert', 'stream'].includes(action) ? '/' + action : ''}`, {}))
+  ipcMain.handle('player-open', (_event, id, action, height) =>
+    engine.call(`/player/${Number(id)}${['convert', 'stream', 'quality'].includes(action) ? '/' + action : ''}`,
+      action === 'quality' ? { height: Number(height) || null } : {}))
   protocol.handle('naqi-media', (request) => engine.media(request))
   ipcMain.handle('library', () => engine.call('/library'))
   ipcMain.handle('library-remove', (_event, id) => engine.call(`/library/${Number(id)}/remove`, {}))
@@ -183,6 +194,21 @@ app.whenReady().then(async () => {
     engine.call(`/library/${Number(id)}/save`, { ...spec, out: loadSettings().folder }))
   ipcMain.handle('save-cancel', (_event, id) => engine.call(`/saves/${Number(id)}/cancel`, {}))
   ipcMain.handle('library-rate', (_event, id, rating) => engine.call(`/library/${Number(id)}/rate`, { rating }))
+  // Settings (T11.2): the keep rule (applied by the engine at once) and GPU or CPU (the engine starts again)
+  ipcMain.handle('keep-get', () => engine.call('/keep'))
+  ipcMain.handle('keep-set', (_event, days, gb) => {
+    saveSettings({ keep_days: String(days), keep_gb: String(gb) })
+    return engine.call('/keep', { days: Number(days), gb: Number(gb) })
+  })
+  ipcMain.handle('device-set', async (_event, device) => {
+    if (!['gpu', 'cpu'].includes(device)) throw new Error('GPU or CPU')
+    if (engine.status.status === 'ready' && (await engine.call('/health')).busy) {
+      throw new Error('Naqi is cleaning or saving right now. Change it when that is done: the engine starts again.')
+    }
+    saveSettings({ device })
+    engine.reload()
+    return device
+  })
   ipcMain.handle('cases-count', () => engine.call('/cases'))
   ipcMain.handle('cases-source', (_event, what) => engine.call('/cases/source', what))
   ipcMain.handle('cases-save', (_event, spec) => engine.call('/cases', spec))
@@ -208,7 +234,10 @@ app.whenReady().then(async () => {
     speed: () => import('./speedtest'), installed: () => import('./installtest'), demo: () => import('./demorecord'),
     keys: () => import('./keystest'), full: () => import('./fulltest'), mutes: () => import('./mutestest'),
     corner: () => import('./cornertest'), details: () => import('./detailstest'), clip: () => import('./cliptest'),
-    gear: () => import('./geartest') }
+    gear: () => import('./geartest'), sleep: () => import('./sleeptest'),
+    steady: () => import('./steadytest'), marks: () => import('./markstest'),
+    quality: () => import('./qualitytest'), search: () => import('./searchtest'), pip: () => import('./piptest'),
+    side: () => import('./sidetest'), settings: () => import('./settingstest') }
   if (tests[process.env.NAQI_SELFTEST]) {
     const which = tests[process.env.NAQI_SELFTEST]()
     const test = async () => (await which).run(win, engine)

@@ -22,8 +22,12 @@ from files import NOWIN, TITLE_MAX  # noqa: E402
 
 DOWNLOAD_SHARE = 0.4    # part of the progress bar used by the download; the rest is the cleaning
 SOUND_SHARE = 0.1       # the same for "Clean and play", which downloads only the sound
-# The picture of a link is streamed, not downloaded (SPEC R14d): video only (the cleaned sound replaces its sound)
-STREAM_FORMAT = "bestvideo[height<=?1080]/best[height<=?1080]/best"
+# The picture of a link is streamed, not downloaded (SPEC R14d): video only (the cleaned sound replaces its sound),
+# up to 1080p ("Auto"), or the size picked in the player's settings menu (SPEC R39). "res" is the shorter side, so a
+# standing video (1080 x 1920) is 1080p too
+STREAM_FORMAT = "bv/b"
+STREAM_AUTO = 1080
+STREAM_HEIGHTS = (1080, 720, 480, 360)
 
 # Sites shown by name; any other site yt-dlp can download from works too and is shown by its domain (SPEC R2)
 SITE_NAMES = {"youtube.com": "YouTube", "youtu.be": "YouTube", "tiktok.com": "TikTok", "facebook.com": "Facebook",
@@ -264,23 +268,33 @@ def download_sound(url, folder, hook):
 
 
 @updates
-def video_stream(url):
-    """The video stream of a link for the player (SPEC R14d): the picture only, up to 1080p; nothing is downloaded.
-    Returns (address, http headers it needs, time it is served from), or (None, [], 0) when the link has no picture."""
-    opts = {"format": STREAM_FORMAT, "noplaylist": True, "playlist_items": "1", "quiet": True, "no_warnings": True,
-            "logger": ErrorLog()}
+def video_stream(url, height=None):
+    """The video stream of a link for the player (SPEC R14d, R39): the picture only, at most `height` lines (None =
+    Auto, up to 1080p); nothing is downloaded. Returns (address, http headers it needs, time it is served from,
+    {"height": the stream's lines, "heights": the sizes of STREAM_HEIGHTS the link has}), or (None, [], 0, {})
+    when the link has no picture."""
+    opts = {"format": STREAM_FORMAT, "format_sort": [f"res:{height or STREAM_AUTO}"], "noplaylist": True,
+            "playlist_items": "1", "quiet": True, "no_warnings": True, "logger": ErrorLog()}
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = extract(ydl, url, download=False)
         if info and "entries" in info:
             info = next((e for e in info["entries"] or [] if e), None)
         f = (info.get("requested_formats") or [info])[0] if info else {}
         if not f.get("url") or f.get("vcodec") == "none":
-            return None, [], 0
+            return None, [], 0, {}
         headers = dict(f.get("http_headers") or {})
         cookie = ydl.cookiejar.get_cookie_header(f["url"])
         if cookie:
             headers["Cookie"] = cookie
-    return f["url"], [f"{k}: {v}" for k, v in headers.items()], f.get("available_at") or 0
+    top = max([_lines(x) for x in info.get("formats") or [] if x.get("vcodec") != "none"] or [_lines(f)])
+    sizes = {"height": _lines(f), "heights": [h for h in STREAM_HEIGHTS if top >= h]}
+    return f["url"], [f"{k}: {v}" for k, v in headers.items()], f.get("available_at") or 0, sizes
+
+
+def _lines(f):
+    """A format's size as the player names it (720 = 720p): its shorter side, 0 when not known."""
+    w, h = f.get("width") or 0, f.get("height") or 0
+    return min(w, h) if w and h else h or w
 
 
 @updates

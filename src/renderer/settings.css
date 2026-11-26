@@ -1,0 +1,114 @@
+/* Settings page (ROADMAP T11.2). Same column as the report page; groups are cards with their rows divided by thin
+   lines. Its own pieces: the look picker (small Naqi windows drawn in each theme's real colours: the tokens use
+   light-dark(), so a window only needs its own color-scheme), the keep meter (Naqi's voice bars, lit up to the space
+   used) and the device cards. */
+.settings {
+  flex: 1; overflow-y: auto;
+  display: grid; align-content: start; gap: var(--s4);
+  width: 100%;
+  padding-inline: max(var(--gutter), calc((100% - 700px) / 2 + var(--gutter)));
+  padding-block: 0 var(--s14);
+  scrollbar-gutter: stable;
+}
+.settings[hidden] { display: none; }
+
+.set-group { display: grid; gap: var(--s3); padding: var(--s5); }
+.set-title { margin: 0; font: 600 var(--text-lg) / 1.3 var(--font-display); }
+.set-lead { margin: calc(var(--s1) * -1) 0 0; max-width: 560px; }
+.set-rows { display: grid; }
+.set-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s2) var(--s5); padding-block: var(--s3); }
+.set-row + .set-row { border-top: 1px solid var(--border); }
+.set-row .meta { margin: 2px 0 0; }
+.set-name { margin: 0; font-weight: 600; color: var(--text); }
+.set-folder { min-width: 0; max-width: 340px; }
+.set-note { margin: 0; min-height: 1.4em; font-size: var(--text-sm); color: var(--muted); }
+.set-note:empty { min-height: 0; }
+
+/* ---------- Look: three little Naqi windows ---------- */
+.look { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s3); }
+.look button {
+  display: grid; gap: var(--s2); justify-items: stretch; text-align: center; width: 100%; min-width: 0; padding: var(--s2) var(--s2) var(--s3);
+  border: 1px solid var(--border); border-radius: var(--r-lg); background: transparent; color: var(--muted);
+  transition: border-color var(--t-fast) ease, background-color var(--t-fast) ease, color var(--t-fast) ease,
+    transform var(--t-press) var(--ease-out);
+}
+.look button:hover { background: var(--hover); color: var(--text); }
+.look button:active { transform: scale(0.97); }
+.look button[aria-checked='true'] { border-color: var(--clean); color: var(--text); box-shadow: 0 0 0 3px var(--clean-soft); }
+.look-name { font-size: var(--text-sm); font-weight: 500; white-space: nowrap; }
+.look-win {
+  display: grid; grid-template-columns: 26% 1fr; width: 100%; aspect-ratio: 16 / 10; overflow: hidden;
+  border-radius: var(--r-md); border: 1px solid var(--border); background: var(--bg);
+}
+[data-mode='light'] .look-win { color-scheme: light; }
+[data-mode='dark'] .look-win { color-scheme: dark; }
+.look-side { background: var(--surface); border-right: 1px solid var(--border); opacity: 0.85; }
+.look-page { display: grid; align-content: center; justify-items: center; gap: 12%; padding: 8%; }
+.look-line { width: 70%; height: 5px; border-radius: 3px; background: var(--text); opacity: 0.55; }
+.look-wave { display: flex; align-items: center; gap: 3px; height: 24px; }
+.look-wave i { width: 3px; height: 100%; border-radius: 2px; background: var(--clean); transform: scaleY(var(--h)); transition: transform var(--t-slow) var(--ease-out); }
+/* The chosen look's voice bars stand up a little taller, like a voice going on */
+.look button[aria-checked='true'] .look-wave i { transform: scaleY(calc(var(--h) * 0.75 + 0.25)); }
+/* Like Windows: the light and the dark window, cut along a slant */
+.look-pair { display: grid; width: 100%; }
+.look-pair .look-win { grid-area: 1 / 1; }
+.look-pair .look-win:first-child { color-scheme: light; }
+.look-pair .look-win:last-child { color-scheme: dark; clip-path: polygon(62% 0, 100% 0, 100% 100%, 38% 100%); }
+
+/* ---------- Keep meter ---------- */
+.keep-meter { display: flex; align-items: center; gap: var(--s4); padding: var(--s3) var(--s4); border-radius: var(--r-md); background: var(--sunken); }
+.keep-meter .meta { margin: 0; white-space: nowrap; }
+.keep-bars { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: space-between; height: 26px; }
+.keep-bars i {
+  width: 3px; height: 100%; border-radius: 2px; background: var(--border-strong);
+  transform: scaleY(calc(var(--h) * 0.5)); transform-origin: center;
+  transition: transform var(--t-slow) var(--ease-out), background-color var(--t-normal) ease;
+  transition-delay: calc(var(--d) * 12ms);
+}
+.keep-bars i.is-lit { background: var(--clean); transform: scaleY(var(--h)); }
+
+/* ---------- Device cards ---------- */
+.device { display: grid; gap: var(--s2); }
+.device button {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--s4);
+  padding: var(--s3) var(--s4); text-align: left;
+  border: 1px solid var(--border); border-radius: var(--r-lg); background: transparent; color: var(--text);
+  transition: border-color var(--t-fast) ease, background-color var(--t-fast) ease, transform var(--t-press) var(--ease-out);
+}
+.device button > span:nth-child(2) { display: grid; gap: 2px; }
+.device button:hover:not(:disabled) { background: var(--hover); }
+.device button:active:not(:disabled) { transform: scale(0.985); }
+.device button:disabled { opacity: 0.5; }
+.device button[aria-checked='true'] { border-color: var(--clean); background: var(--clean-soft); }
+.device-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-md); background: var(--sunken); color: var(--muted); transition: color var(--t-fast) ease; }
+[aria-checked='true'] > .device-icon { color: var(--clean); background: var(--surface); }
+.device-mark {
+  display: grid; place-items: center; width: 22px; height: 22px; border-radius: var(--r-full);
+  border: 1.5px solid var(--border-strong); color: transparent;
+  transition: background-color var(--t-fast) ease, border-color var(--t-fast) ease, color var(--t-fast) ease;
+}
+[aria-checked='true'] > .device-mark { background: var(--clean); border-color: var(--clean); color: var(--primary-text); }
+[aria-checked='true'] > .device-mark svg { animation: pop var(--t-normal) var(--ease-out); }
+/* While the engine starts again on the chosen one, its chip turns slowly, and the cards wait */
+.device[data-busy='true'] button { pointer-events: none; }
+.device[data-busy='true'] [aria-checked='true'] .device-icon svg { animation: turn 1.6s linear infinite; }
+@keyframes turn { to { transform: rotate(360deg); } }
+
+/* ---------- The gear at the foot of the library ---------- */
+.side-foot { display: flex; align-items: center; gap: var(--s1); margin-top: auto; }
+.side-foot .side-report { flex: 1; margin-top: 0; }
+.side-gear { color: var(--muted); }
+.side-gear svg, #rail-settings svg { transition: transform var(--t-slow) var(--ease-out); }
+.side-gear:hover svg, #rail-settings:hover svg { transform: rotate(60deg); }
+:is(.side-gear, #rail-settings)[aria-current='page'] { background: var(--selected); color: var(--text); }
+
+@media (max-width: 760px) {
+  .set-row { grid-template-columns: 1fr; }
+  .set-row .seg, .set-folder { justify-self: start; }
+  .look { gap: var(--s2); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .keep-bars i, .look-wave i { transition: none; }
+  .device[data-busy='true'] [aria-checked='true'] .device-icon svg { animation: none; }
+  .side-gear:hover svg, #rail-settings:hover svg { transform: none; }
+}

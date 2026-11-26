@@ -3,8 +3,8 @@
   served with byte ranges. While "Clean and play" still writes it, every byte past the clean part is held back
   until it is clean, so the browser's <audio> just sees a slow network and waits (SPEC R8, option B).
 - Picture: a muted <video> that follows the sound. An own video gives its picture from the file, or from a copy
-  the browser can play (picture.py, first part then full); a link's picture is streamed (video only, up to 1080p,
-  found with yt-dlp; nothing is downloaded) through this engine, which adds the headers the site wants.
+  the browser can play (picture.py, first part then full); a link's picture is streamed (video only, up to 1080p
+  or the size picked in the settings menu, found with yt-dlp; nothing is downloaded) through this engine, which adds the headers the site wants.
 It is found as soon as "Clean and play" starts (prepare), so it is there when the sound starts playing.
 """
 import os
@@ -22,6 +22,12 @@ from files import DATA_DIR, NOWIN, VIDEO_EXTS, is_link
 STREAM_FRESH_S = 3600   # a found stream address is used again for this long (YouTube's last about 6 hours)
 SR, FRAME_BYTES, HEADER = 44100, 4, 44   # cleaned.wav: 44.1 kHz, 16-bit stereo, 44-byte header
 STREAM_FAILED = "Sound only: the picture could not be loaded."
+# The site's stream is asked for in pieces: YouTube sends an open-ended range ("bytes=N-") at about the video's own
+# rate (0.22 MB/s measured), a bounded 10 MB piece at full speed (6 MB/s), so a jump or a new size (T10.5e) would
+# otherwise leave the picture seconds behind the sound (yt-dlp downloads in such pieces for the same reason)
+STREAM_PIECE = 10 * 1024 * 1024
+STREAM_READ = 256 * 1024
+STREAM_KEYS = ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges")
 WAVE_RATE, WAVE_BINS = 8000, 2000   # the report's sound strip: its shape is read at 8 kHz, in this many peaks
 MUTED_HOP = 441          # the time bar's muted parts are read per 10 ms (the music-trace check's step)...
 MUTED_MIN_FRAMES = 30    # ...and a part is at least 0.3 s of exact silence (the check mutes 0.41 s or more)
@@ -31,7 +37,9 @@ class Player:
     def __init__(self, emit, pictures):
         self.emit = emit
         self.pictures = pictures
-        self.streams = {}   # row id -> {"state": running / done / error, "url", "headers", "at", "found", "text"}
+        self.streams = {}   # row id -> {"state": running / done / error, "url", "headers", "at", "found", "text",
+        #                    "height": the size asked (None = Auto), "got": the stream's size, "heights": the link's sizes}
+        self.height = None  # the size picked in the settings menu (SPEC R39), for every link while the engine runs
         self.waves = {}     # row id -> ((path, mtime, size), shape): a strip read once per file
         self.mutes = {}     # row id -> the time bar's muted parts, read so far (muted())
         self._mute_lock = threading.Lock()
@@ -59,7 +67,7 @@ class Player:
             raise ValueError("Not in the library any more.")
         kind, src = self._picture_source(r)
         if kind == "stream":
-            return dict(self._stream(row_id, src), type="stream")
+            return dict(self._stream(row_id, src, height=self.height), type="stream")
         if kind == "file":
             folder = history.history_folder(r) or os.path.join(DATA_DIR, "pictures")
             try:
@@ -77,30 +85,52 @@ class Player:
         folder = history.history_folder(r) or os.path.join(DATA_DIR, "pictures")
         return {"type": "file", "item": self.pictures.start({"src": src, "folder": folder, "how": "convert"})}
 
-    def _stream(self, row_id, link, again=False):
-        """A link's stream address, found in a thread (a few seconds); "stream" events tell the page when it is
-        there. again: the site refused the old address, find a new one (once, as old Naqi did)."""
+    def _stream(self, row_id, link, again=False, height=None):
+        """A link's stream address at `height` lines at most (None = Auto), found in a thread (a few seconds);
+        "stream" events tell the page when it is there. again: the site refused the old address, find a new one
+        (once, as old Naqi did). A new size is looked up while the old stream still plays; if it cannot be
+        found, the old one stays."""
         with self._lock:
             s = self.streams.get(row_id)
-            fresh = s and (s["state"] == "running" or (s["state"] == "done" and time.time() - s["found"] < STREAM_FRESH_S))
+            fresh = s and s["height"] == height and (
+                s["state"] == "running" or (s["state"] == "done" and time.time() - s["found"] < STREAM_FRESH_S))
             if fresh and not again:
                 return _public(row_id, s)
+            keep = s if s and s["state"] == "done" and s["height"] != height else None
             s = self.streams[row_id] = {"state": "running", "url": None, "headers": {}, "at": 0, "found": 0,
-                                        "text": "Finding the picture…", "again": again}
+                                        "text": "Finding the picture…", "again": again, "height": height,
+                                        "got": 0, "heights": (s or {}).get("heights", []), "keep": keep}
         threading.Thread(target=self._find, args=(row_id, link, s), daemon=True).start()
         return _public(row_id, s)
 
     def _find(self, row_id, link, s):
         try:
-            url, headers, at = downloads.video_stream(link)
+            url, headers, at, sizes = downloads.video_stream(link, s["height"])
             if url:
                 s.update(state="done", url=url, headers=dict(h.split(": ", 1) for h in headers), at=at or 0,
-                         found=time.time(), text="")
+                         found=time.time(), text="", got=sizes["height"], heights=sizes["heights"])
             else:
                 s.update(state="error", text="This link has no picture. The cleaned sound still plays.")
         except Exception:
             s.update(state="error", text=STREAM_FAILED)
+        keep = s.pop("keep", None)
+        if s["state"] == "error" and keep:   # the new size could not be found: the old stream goes on
+            with self._lock:
+                if self.streams.get(row_id) is s:
+                    self.streams[row_id] = s = dict(keep, text="That size could not be loaded. The picture stays as it was.")
+                    self.height = s["height"]
         self.emit("stream", _public(row_id, s))
+
+    def quality(self, row_id, height):
+        """The settings menu picked a size for links' pictures (SPEC R39): None (Auto, up to 1080p), 1080, 720, 480
+        or 360. It is kept for the next links too; this item's stream is looked up at that size."""
+        if height is not None and height not in downloads.STREAM_HEIGHTS:
+            raise ValueError("Pick Auto, 1080p, 720p, 480p or 360p.")
+        r = history.get_row(row_id)
+        self.height = height
+        if not r or self._picture_source(r)[0] != "stream":
+            raise ValueError("This item has no streamed picture.")
+        return dict(self._stream(row_id, r["source"], height=height), type="stream")
 
     def refind(self, row_id):
         """The page's <video> could not open the stream: look it up once more, then give up."""
@@ -112,7 +142,7 @@ class Player:
             s.update(state="error", text=STREAM_FAILED)
             self.emit("stream", _public(row_id, s))
             return dict(_public(row_id, s), type="stream")
-        return dict(self._stream(row_id, r["source"], again=True), type="stream")
+        return dict(self._stream(row_id, r["source"], again=True, height=s["height"] if s else self.height), type="stream")
 
     def stream_request(self, row_id):
         """(address, headers) of a found stream, or None."""
@@ -206,8 +236,9 @@ def save_info(r, live_id=None):
 
 
 def _public(row_id, s):
-    """A stream's state as the page sees it (never its address or headers)."""
-    return {"row_id": row_id, "state": s["state"], "at": s["at"], "text": s["text"]}
+    """A stream's state as the page sees it (never its address or headers); found tells one address from another."""
+    return {"row_id": row_id, "state": s["state"], "at": s["at"], "text": s["text"], "found": s["found"],
+            "height": s["height"], "got": s["got"], "heights": s["heights"]}
 
 
 def _shape(path):
@@ -284,6 +315,48 @@ def clean_edge(job, row_id):
 
 
 def open_stream(url, headers, rng):
-    """Opens the site's stream for one request of the page's <video> (byte range rng, e.g. "bytes=0-")."""
+    """Opens the site's stream for one request of the page's <video> (byte range rng, e.g. "bytes=0-"). Returns
+    (status, headers for the page, the body as pieces of bytes): the range is fetched in STREAM_PIECE pieces one
+    after the other and given to the page as one answer. A site that ignores ranges is passed through as it is.
+    Raises when the site refuses the first piece (the page then looks the stream up once more)."""
+    a, b = _byte_range(rng)
+    first = _fetch(url, headers, rng if a is None else f"bytes={a}-{a + STREAM_PIECE - 1 if b is None else min(b, a + STREAM_PIECE - 1)}")
+    sent = first.headers.get("Content-Range") or ""
+    total = sent.rpartition("/")[2]
+    if a is None or first.status != 206 or not total.isdigit():
+        return first.status, {k: first.headers[k] for k in STREAM_KEYS if first.headers.get(k)}, _pieces(first)
+    total = int(total)
+    end = total - 1 if b is None else min(b, total - 1)
+    out = {"Content-Type": first.headers.get("Content-Type") or "video/mp4", "Accept-Ranges": "bytes",
+           "Content-Length": str(end - a + 1), "Content-Range": f"bytes {a}-{end}/{total}"}
+    return 206, out, _pieces(first, url, headers, a, end)
+
+
+def _pieces(up, url=None, headers=None, pos=0, end=None):
+    """The body of `up`, then (when url is given) the next pieces up to byte `end`."""
+    try:
+        while True:
+            data = up.read(STREAM_READ)
+            if data:
+                pos += len(data)
+                yield data
+                continue
+            up.close()
+            if url is None or pos > end:
+                return
+            up = _fetch(url, headers, f"bytes={pos}-{min(end, pos + STREAM_PIECE - 1)}")
+    finally:
+        up.close()
+
+
+def _byte_range(rng):
+    """"bytes=a-b" or "bytes=a-" -> (a, b or None); (None, None) for no range or any other kind."""
+    lo, _, hi = (rng or "").removeprefix("bytes=").partition("-")
+    if not (rng or "").startswith("bytes=") or not lo.strip().isdigit() or (hi.strip() and not hi.strip().isdigit()):
+        return None, None
+    return int(lo), int(hi) if hi.strip() else None
+
+
+def _fetch(url, headers, rng):
     req = urllib.request.Request(url, headers=dict(headers, **({"Range": rng} if rng else {})))
     return urllib.request.urlopen(req, timeout=20)

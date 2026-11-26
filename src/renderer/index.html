@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="./home.css" />
     <link rel="stylesheet" href="./player.css" />
     <link rel="stylesheet" href="./report.css" />
+    <link rel="stylesheet" href="./settings.css" />
     <link rel="stylesheet" href="./launch.css" />
   </head>
   <body>
@@ -24,25 +25,76 @@
       </div>
     </div>
     <!-- Library (left side): every cleaned file, newest first -->
+    <!-- T11.1: the library folded away leaves this strip; hovering it slides the library out over the page (side.js) -->
+    <nav class="rail" id="rail" aria-label="Library, folded">
+      <img class="rail-logo" src="./assets/naqi.png" alt="" width="34" height="34" />
+      <button class="btn btn-icon" id="rail-open" aria-label="Show the library (Ctrl+B)" data-tip="Show the library (Ctrl+B)"><i data-icon="sidebar"></i></button>
+      <button class="btn btn-icon" id="rail-search" data-no-peek aria-label="Search the library" data-tip="Search"><i data-icon="search"></i></button>
+      <!-- One block with the gap between them: going for one of them never opens the library -->
+      <div class="rail-end" data-no-peek>
+        <button class="btn btn-icon" id="rail-report" aria-label="Report a slip" data-tip="Report a slip"><i data-icon="flag"></i></button>
+        <button class="btn btn-icon" id="rail-settings" aria-label="Settings" data-tip="Settings"><i data-icon="gear"></i></button>
+      </div>
+    </nav>
+    <div class="side-edge" id="side-edge" aria-hidden="true"></div>
     <aside class="side" aria-label="Library">
       <div class="brand">
         <img src="./assets/naqi.png" alt="" width="34" height="34" />
         <div class="brand-name">Naqi <span class="ar" lang="ar">نقي</span></div>
+        <button class="btn btn-icon btn-sm side-toggle" id="side-toggle" aria-label="Hide the library (Ctrl+B)" data-tip="Hide the library (Ctrl+B)"><i data-icon="sidebar" class="icon-sm"></i></button>
       </div>
       <div class="side-head">
         <h2 class="section-label" id="lib-label">Library</h2>
         <span class="tag num" id="lib-count" hidden></span>
       </div>
+      <!-- T10.6: search by name, and filters (when, rating, link or own file) that narrow the list -->
+      <div class="lib-find" id="lib-find" hidden>
+        <div class="field lib-search">
+          <i data-icon="search" class="icon-sm"></i>
+          <input id="lib-q" type="search" placeholder="Search by name" aria-label="Search the library by name" dir="auto" autocomplete="off" spellcheck="false" />
+          <button class="btn btn-icon btn-sm" id="lib-q-clear" aria-label="Clear the search" hidden><i data-icon="close" class="icon-sm"></i></button>
+        </div>
+        <button class="btn btn-icon lib-filter-toggle" id="lib-filter-toggle" aria-expanded="false" aria-controls="lib-filters" aria-label="Filters"><i data-icon="options"></i><span class="lib-filter-dot" aria-hidden="true"></span></button>
+      </div>
+      <div class="disclosure lib-filters" id="lib-filters" data-open="false"><div>
+        <div class="lib-chips" role="group" aria-label="When" data-filter="when">
+          <span class="lib-chips-label" aria-hidden="true">When</span>
+          <button data-value="today" aria-pressed="false" tabindex="-1">Today</button>
+          <button data-value="week" aria-pressed="false" tabindex="-1">7 days</button>
+          <button data-value="month" aria-pressed="false" tabindex="-1">30 days</button>
+        </div>
+        <div class="lib-chips" role="group" aria-label="Rating" data-filter="rating">
+          <span class="lib-chips-label" aria-hidden="true">Rating</span>
+          <button data-value="none" aria-pressed="false" tabindex="-1">Not rated</button>
+          <button data-value="bad" aria-pressed="false" tabindex="-1">Bad</button>
+          <button data-value="good" aria-pressed="false" tabindex="-1">Good</button>
+          <button data-value="perfect" aria-pressed="false" tabindex="-1">Perfect</button>
+        </div>
+        <div class="lib-chips" role="group" aria-label="From" data-filter="from">
+          <span class="lib-chips-label" aria-hidden="true">From</span>
+          <button data-value="link" aria-pressed="false" tabindex="-1">Links</button>
+          <button data-value="own" aria-pressed="false" tabindex="-1">Own files</button>
+        </div>
+        <button class="btn-link lib-filter-clear" id="lib-filter-clear" tabindex="-1" hidden>Clear filters</button>
+      </div></div>
       <div class="empty lib-empty" id="lib-empty" hidden>
         <!-- Naqi's own sign: voices stay (green), the music is gone (faint purple) -->
         <span class="wave empty-wave" aria-hidden="true"><i style="--h:.45"></i><i style="--h:.8"></i><i class="is-music" style="--h:.15"></i><i style="--h:1"></i><i style="--h:.6"></i><i class="is-music" style="--h:.15"></i><i class="is-music" style="--h:.15"></i><i style="--h:.7"></i><i style="--h:.35"></i></span>
         <p class="card-title">Nothing here yet</p>
         <p class="meta">Clean a link or a file, and it waits here to be played again, rated or saved.</p>
       </div>
+      <div class="lib-none" id="lib-none" hidden>
+        <p class="card-title">Nothing matches</p>
+        <p class="meta" id="lib-none-text"></p>
+        <button class="btn btn-ghost btn-sm" id="lib-show-all">Show all</button>
+      </div>
       <ul class="lib" id="lib" aria-labelledby="lib-label">
         <li class="lib-light" aria-hidden="true"></li>
       </ul>
-      <button class="btn btn-quiet side-report" id="open-report"><i data-icon="flag"></i>Report a slip</button>
+      <div class="side-foot">
+        <button class="btn btn-quiet side-report" id="open-report"><i data-icon="flag"></i>Report a slip</button>
+        <button class="btn btn-icon side-gear" id="open-settings" aria-label="Settings" data-tip="Settings"><i data-icon="gear"></i></button>
+      </div>
     </aside>
 
     <div class="content">
@@ -56,11 +108,6 @@
           </div>
           <button class="btn btn-ghost btn-sm" id="engine-restart" hidden>Start again</button>
           <span id="engine-details" hidden></span>
-        </div>
-        <div class="seg" id="theme" aria-label="Theme">
-          <button data-mode="system" aria-label="Follow Windows" title="Follow Windows"><i data-icon="system" class="icon-sm"></i></button>
-          <button data-mode="light" aria-label="Light" title="Light"><i data-icon="sun" class="icon-sm"></i></button>
-          <button data-mode="dark" aria-label="Dark" title="Dark"><i data-icon="moon" class="icon-sm"></i></button>
         </div>
       </div>
     </header>
@@ -189,10 +236,12 @@
       </div>
       <div class="player card">
         <div class="screen" id="screen" data-kind="video" data-picture="none">
-          <video id="picture" muted playsinline preload="auto" disablepictureinpicture></video>
+          <video id="picture" muted playsinline preload="auto"></video>
           <div class="screen-sound" aria-hidden="true"><i data-icon="audio" class="icon-lg"></i></div>
           <p class="screen-note" id="screen-note"></p>
           <p class="screen-wait" aria-hidden="true">Waiting for the cleaning…</p>
+          <!-- T10.7: while the picture is in the floating window, the screen says so and can bring it back -->
+          <div class="screen-pip" id="screen-pip"><i data-icon="pip" class="icon-lg"></i><p>Playing in picture-in-picture</p><button class="btn btn-sm" id="pip-back">Bring the picture back</button></div>
           <span class="tag screen-tag num" id="clean-tag" hidden></span>
           <!-- While the bar is hidden: a hairline at the bottom keeps the played and the clean part in sight -->
           <div class="screen-peek" id="screen-peek" aria-hidden="true"><div class="peek-clean"></div><div class="peek-played"></div></div>
@@ -207,14 +256,17 @@
             </div>
             <div class="controls">
               <button class="btn btn-play" id="player-play" data-autofocus aria-pressed="false" aria-label="Play (Space)"><i data-icon="play"></i><i data-icon="pause"></i></button>
-              <span class="num times"><span id="t-now">0:00</span> <span class="meta">/ <span id="t-len">0:00</span></span></span>
-              <span class="row-gap"></span>
-              <button class="btn btn-icon btn-sm" id="save-show" aria-label="Show the saved file in its folder" data-tip="Show in folder" hidden><i data-icon="folder" class="icon-sm"></i></button>
-              <!-- Like YouTube: the speaker alone; its volume line slides out while the mouse or focus is on it -->
+              <!-- Like YouTube: the speaker alone; its volume line slides out while the mouse or focus is on it;
+                   next to Play, so the speaker stays put and only the line opens (to its right) -->
               <span class="volume-group" id="volume-group">
                 <button class="btn btn-icon btn-sm" id="mute" aria-label="Mute (M)" data-tip="Mute (M)"><i data-icon="volume" class="icon-sm"></i></button>
                 <input class="range" id="volume" type="range" min="0" max="1" step="0.01" value="1" aria-label="Volume" />
               </span>
+              <span class="num times"><span id="t-now">0:00</span> <span class="meta">/ <span id="t-len">0:00</span></span></span>
+              <!-- T10.5b: shown while the sleep timer runs; a click opens its list -->
+              <button class="sleep-chip num" id="sleep-chip" aria-label="Sleep timer" data-tip="Sleep timer" hidden><i data-icon="sleep" class="icon-sm"></i><span id="sleep-left"></span></button>
+              <span class="row-gap"></span>
+              <button class="btn btn-icon btn-sm" id="save-show" aria-label="Show the saved file in its folder" data-tip="Show in folder" hidden><i data-icon="folder" class="icon-sm"></i></button>
               <button class="btn btn-icon btn-sm" id="keys-toggle" aria-label="Keys (?)" data-tip="Keys (?)" aria-expanded="false" aria-controls="keys-card"><i data-icon="keys" class="icon-sm"></i></button>
               <!-- T10.5: settings like YouTube's (Speed first; the next settings join its list) -->
               <button class="btn btn-icon btn-sm gear-toggle" id="gear-toggle" aria-label="Settings" data-tip="Settings" aria-expanded="false" aria-controls="gear-menu" aria-haspopup="menu"><i data-icon="gear" class="icon-sm"></i></button>
@@ -229,9 +281,15 @@
           <div class="gear-menu" id="gear-menu" data-open="false" data-panel="main" inert>
             <div class="gear-panel" data-name="main" role="menu" aria-label="Settings">
               <button class="gear-item" role="menuitem" data-go="speed" aria-haspopup="menu"><i data-icon="speed" class="icon-sm"></i><span class="gear-name">Speed</span><span class="gear-value num" id="gear-speed-value">Normal</span><i data-icon="next" class="icon-sm gear-next"></i></button>
+              <button class="gear-item" role="menuitem" data-go="sleep" aria-haspopup="menu"><i data-icon="sleep" class="icon-sm"></i><span class="gear-name">Sleep timer</span><span class="gear-value num" id="gear-sleep-value">Off</span><i data-icon="next" class="icon-sm gear-next"></i></button>
+              <button class="gear-item" role="menuitem" data-go="quality" aria-haspopup="menu" id="gear-quality" hidden><i data-icon="quality" class="icon-sm"></i><span class="gear-name">Quality</span><span class="gear-value num" id="gear-quality-value">Auto</span><i data-icon="next" class="icon-sm gear-next"></i></button>
+              <button class="gear-item" role="menuitemcheckbox" aria-checked="false" id="gear-steady"><i data-icon="steady" class="icon-sm"></i><span class="gear-name">Steady volume</span><span class="gear-switch" aria-hidden="true"></span></button>
+              <button class="gear-item" role="menuitemcheckbox" aria-checked="true" id="gear-marks"><i data-icon="marks" class="icon-sm"></i><span class="gear-name">Muted marks</span><span class="gear-switch" aria-hidden="true"></span></button>
               <!-- Save and Report here act on the item, so they sit under the settings after a line (not in the corner) -->
               <button class="gear-item gear-act" role="menuitem" id="save-toggle" aria-expanded="false" aria-controls="save-panel" hidden><i data-icon="save" class="icon-sm"></i><span class="gear-name">Save…</span><span class="gear-value" id="gear-save-value">MP3 or MP4</span></button>
               <button class="gear-item gear-act" role="menuitem" id="report-here"><i data-icon="flag" class="icon-sm"></i><span class="gear-name">Report here</span><span class="gear-value num" id="gear-report-value">0:00</span></button>
+              <!-- T10.7: the picture in Windows' floating window (not the corner, which stays inside Naqi) -->
+              <button class="gear-item gear-act" role="menuitemcheckbox" aria-checked="false" id="gear-pip"><i data-icon="pip" class="icon-sm"></i><span class="gear-name">Picture-in-picture</span><span class="gear-switch" aria-hidden="true"></span></button>
             </div>
             <div class="gear-panel" data-name="speed" role="menu" aria-label="Speed">
               <button class="gear-item gear-head" data-go="main" aria-label="Back to the settings"><i data-icon="back" class="icon-sm"></i><span class="gear-name">Speed</span><span class="gear-value">voice stays natural</span></button>
@@ -244,6 +302,29 @@
                 <button class="gear-item" role="menuitemradio" data-speed="1.5">1.5x</button>
                 <button class="gear-item" role="menuitemradio" data-speed="1.75">1.75x</button>
                 <button class="gear-item" role="menuitemradio" data-speed="2">2x</button>
+              </div>
+            </div>
+            <!-- T10.5b: the sound fades out and pauses after this much playing, or at the end -->
+            <div class="gear-panel" data-name="sleep" role="menu" aria-label="Sleep timer">
+              <button class="gear-item gear-head" data-go="main" aria-label="Back to the settings"><i data-icon="back" class="icon-sm"></i><span class="gear-name">Sleep timer</span><span class="gear-value">pauses the sound</span></button>
+              <div class="gear-choices" id="gear-sleeps">
+                <span class="gear-dot" aria-hidden="true"></span>
+                <button class="gear-item" role="menuitemradio" data-sleep="0">Off</button>
+                <button class="gear-item" role="menuitemradio" data-sleep="15">15 min</button>
+                <button class="gear-item" role="menuitemradio" data-sleep="30">30 min</button>
+                <button class="gear-item" role="menuitemradio" data-sleep="60">60 min</button>
+                <button class="gear-item" role="menuitemradio" data-sleep="end">End of video</button>
+              </div>
+            </div>
+            <div class="gear-panel" data-name="quality" role="menu" aria-label="Quality">
+              <button class="gear-item gear-head" data-go="main" aria-label="Back to the settings"><i data-icon="back" class="icon-sm"></i><span class="gear-name">Quality</span><span class="gear-value">the link's picture</span></button>
+              <div class="gear-choices" id="gear-qualities">
+                <span class="gear-dot" aria-hidden="true"></span>
+                <button class="gear-item" role="menuitemradio" data-quality="">Auto</button>
+                <button class="gear-item" role="menuitemradio" data-quality="1080">1080p</button>
+                <button class="gear-item" role="menuitemradio" data-quality="720">720p</button>
+                <button class="gear-item" role="menuitemradio" data-quality="480">480p</button>
+                <button class="gear-item" role="menuitemradio" data-quality="360">360p</button>
               </div>
             </div>
           </div>
@@ -261,6 +342,7 @@
           <p class="keys-group">Screen</p>
           <div class="keys-row"><span>Fullscreen (or double click)</span><span class="keys-caps"><kbd data-k="f">F</kbd></span></div>
           <div class="keys-row"><span>Miniplayer (keeps playing in the corner)</span><span class="keys-caps"><kbd data-k="i">I</kbd></span></div>
+          <div class="keys-row"><span>Picture-in-picture (a floating window)</span><span class="keys-caps"><kbd data-k="p">P</kbd></span></div>
           <div class="keys-row"><span>Theater mode</span><span class="keys-caps"><kbd data-k="t">T</kbd></span></div>
           <div class="keys-row"><span>Back, or leave fullscreen</span><span class="keys-caps"><kbd data-k="esc">Esc</kbd></span></div>
           <div class="keys-row"><span>This list</span><span class="keys-caps"><kbd data-k="?">?</kbd></span></div>
@@ -357,6 +439,78 @@
 
       <button class="btn btn-primary btn-lg" id="save-slip"><i data-icon="flag"></i><span id="save-text">Save the slip</span></button>
       <p class="report-status" id="report-status" aria-live="polite"></p>
+    </main>
+
+    <!-- Settings (T11.2, settings.js): opened by the gear at the bottom of the library (and of the strip) -->
+    <main class="settings" id="settings" hidden aria-labelledby="settings-title">
+      <div class="report-head">
+        <button class="btn btn-icon" id="settings-back" data-autofocus aria-label="Back" data-tip="Back"><i data-icon="back"></i></button>
+        <div>
+          <h1 class="page-title" id="settings-title">Settings</h1>
+          <p class="meta report-sub">Every change is kept at once, also after Naqi closes.</p>
+        </div>
+      </div>
+
+      <section class="card set-group" aria-labelledby="set-look">
+        <h2 class="set-title" id="set-look">Look</h2>
+        <div class="look" id="theme" aria-label="Theme">
+          <button data-mode="system"><span class="look-pair"><span class="look-win" aria-hidden="true"><span class="look-side"></span><span class="look-page"><span class="look-line"></span><span class="look-wave"><i style="--h:.5"></i><i style="--h:.9"></i><i style="--h:.35"></i><i style="--h:1"></i><i style="--h:.6"></i><i style="--h:.8"></i></span></span></span><span class="look-win" aria-hidden="true"><span class="look-side"></span><span class="look-page"><span class="look-line"></span><span class="look-wave"><i style="--h:.5"></i><i style="--h:.9"></i><i style="--h:.35"></i><i style="--h:1"></i><i style="--h:.6"></i><i style="--h:.8"></i></span></span></span></span><span class="look-name">Like Windows</span></button>
+          <button data-mode="light"><span class="look-win" aria-hidden="true"><span class="look-side"></span><span class="look-page"><span class="look-line"></span><span class="look-wave"><i style="--h:.5"></i><i style="--h:.9"></i><i style="--h:.35"></i><i style="--h:1"></i><i style="--h:.6"></i><i style="--h:.8"></i></span></span></span><span class="look-name">Light</span></button>
+          <button data-mode="dark"><span class="look-win" aria-hidden="true"><span class="look-side"></span><span class="look-page"><span class="look-line"></span><span class="look-wave"><i style="--h:.5"></i><i style="--h:.9"></i><i style="--h:.35"></i><i style="--h:1"></i><i style="--h:.6"></i><i style="--h:.8"></i></span></span></span><span class="look-name">Dark</span></button>
+        </div>
+      </section>
+
+      <section class="card set-group" aria-labelledby="set-save">
+        <h2 class="set-title" id="set-save">Saving</h2>
+        <div class="set-rows">
+          <div class="set-row">
+            <div><p class="set-name">Save to</p><p class="meta">Each day gets its own folder inside it.</p></div>
+            <div class="save-to set-folder">
+              <span class="path num" id="set-folder"></span>
+              <button class="btn btn-ghost btn-sm" id="set-folder-show" aria-label="Open the folder" data-tip="Open"><i data-icon="folder" class="icon-sm"></i></button>
+              <button class="btn btn-ghost btn-sm" id="set-folder-change">Change</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card set-group" aria-labelledby="set-keep">
+        <h2 class="set-title" id="set-keep">Cleaned sounds kept</h2>
+        <p class="meta set-lead">Played items keep their cleaned sound, so they play again at once. The oldest go first; an item whose sound is gone is cleaned again when you play it. Your own and saved files are never deleted.</p>
+        <div class="set-rows">
+          <div class="set-row">
+            <p class="set-name">Keep for</p>
+            <div class="seg" id="set-days"><button data-value="7">1 week</button><button data-value="14">2 weeks</button><button data-value="30">1 month</button><button data-value="90">3 months</button></div>
+          </div>
+          <div class="set-row">
+            <p class="set-name">At most</p>
+            <div class="seg" id="set-gb"><button data-value="2">2 GB</button><button data-value="5">5 GB</button><button data-value="10">10 GB</button><button data-value="20">20 GB</button></div>
+          </div>
+        </div>
+        <!-- How full the space is: Naqi's own bars, lit up to what the kept sounds take -->
+        <div class="keep-meter" id="keep-meter" role="meter" aria-label="Space used by kept sounds" aria-valuemin="0" aria-valuemax="100">
+          <span class="keep-bars" id="keep-bars" aria-hidden="true"></span>
+          <p class="meta num" id="keep-text">…</p>
+        </div>
+        <p class="set-note" id="keep-note" aria-live="polite"></p>
+      </section>
+
+      <section class="card set-group" aria-labelledby="set-engine">
+        <h2 class="set-title" id="set-engine">Cleaning runs on</h2>
+        <div class="device" id="set-device" role="radiogroup" aria-labelledby="set-engine">
+          <button data-value="gpu" role="radio" aria-checked="false">
+            <span class="device-icon"><i data-icon="chip"></i></span>
+            <span><span class="set-name">Graphics card</span><span class="meta" id="device-gpu-text">About 7 times faster than the video plays</span></span>
+            <span class="device-mark" aria-hidden="true"><i data-icon="check" class="icon-sm"></i></span>
+          </button>
+          <button data-value="cpu" role="radio" aria-checked="false">
+            <span class="device-icon"><i data-icon="system"></i></span>
+            <span><span class="set-name">CPU only</span><span class="meta">Much slower: a 5 min video takes about 17 min and plays once all is clean</span></span>
+            <span class="device-mark" aria-hidden="true"><i data-icon="check" class="icon-sm"></i></span>
+          </button>
+        </div>
+        <p class="set-note" id="device-note" aria-live="polite">Changing it starts the engine again (about 10 s). What is playing stops.</p>
+      </section>
     </main>
     </div>
 

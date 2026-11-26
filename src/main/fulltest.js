@@ -17,6 +17,7 @@ export async function run(win, engine) {
   const log = []
   let fails = 0
   let theater0 = null
+  let sidebar0 = null
   const t0 = Date.now()
   const note = (text) => { log.push(`${((Date.now() - t0) / 1000).toFixed(2)} s  ${text}`); console.log('[fulltest]', text) }
   const check = (name, ok, detail = '') => { fails += !ok; note(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? `  (${detail})` : ''}`) }
@@ -26,7 +27,8 @@ export async function run(win, engine) {
   const watching = () => page(`!document.querySelector('#watch').hidden`)
   const full = () => page('document.fullscreenElement?.id || null')
   const theaterOn = () => page(`document.body.hasAttribute('data-theater')`)
-  const width = (sel) => page(`Math.round(document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect().width)`)
+  // The width on screen: the library slides off the left edge when it goes (T11.1), it does not shrink
+  const width = (sel) => page(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return getComputedStyle(document.querySelector(${JSON.stringify(sel)})).visibility === 'hidden' ? 0 : Math.round(Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0))) })()`)
   const shot = async (name) => { await sleep(400); writeFileSync(join(outDir, name), (await win.webContents.capturePage()).toPNG()) }
   const press = async (keyCode, modifiers = [], wait = 250) => {
     win.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers })
@@ -54,6 +56,9 @@ export async function run(win, engine) {
     theater0 = (await page('window.naqi.getSettings()')).theater ?? null
     await page(`window.naqi.setSettings({ theater: '0' })`)
     await page(`document.body.removeAttribute('data-theater')`)
+    // Theater is measured from the library open (T11.1 can fold it): opened here, the choice put back at the end
+    sidebar0 = (await page(`window.naqi.getSettings()`)).sidebar ?? null
+    if (await page(`document.body.dataset.side === 'closed'`)) await page(`document.querySelector('#rail-open').click(); document.activeElement.blur()`)
     check('engine ready with the models', await until(async () => engine.status.status === 'ready' && (await engine.call('/health')).models, 120000), engine.status.gpu?.name)
     ipcMain.removeHandler('choose-files')
     ipcMain.handle('choose-files', () => [SAMPLE])
@@ -73,7 +78,7 @@ export async function run(win, engine) {
     await move(await center('#screen'))
     await move(await center('#theater-toggle'))
     await click(await center('#theater-toggle'), 1, 0)
-    const mid = await page(`new Promise((r) => setTimeout(() => r(Math.round(document.querySelector('.side').getBoundingClientRect().width)), 120))`)
+    const mid = await page(`new Promise((r) => setTimeout(() => r(Math.round(Math.max(0, document.querySelector('.side').getBoundingClientRect().right))), 120))`)
     await sleep(500)
     const side1 = await width('.side')
     const watch1 = await width('#watch')
@@ -218,6 +223,7 @@ export async function run(win, engine) {
     win.setAlwaysOnTop(false)
     // The saved theater choice is put back as it was
     await page(`window.naqi.setSettings({ theater: ${JSON.stringify(theater0 ?? '0')} })`).catch(() => {})
+    if (sidebar0) await page(`window.naqi.setSettings({ sidebar: ${JSON.stringify(sidebar0)} })`).catch(() => {})
     note(fails ? `${fails} check(s) FAILED` : 'ALL PASSED')
     writeFileSync(join(outDir, 'log.txt'), log.join('\n') + '\n')
     setTimeout(() => app.quit(), 500)

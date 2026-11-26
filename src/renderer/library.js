@@ -3,6 +3,7 @@
 // (its rating, Show in folder, Remove). Its round Play button (or a double click) plays it (T4.1: a 'naqi-play' event,
 // main.js decides how). Remove waits a few seconds with an Undo, then
 // the engine deletes the row and Naqi's own kept copy; saved files and own files are never touched.
+// T10.6: a search box (name) and filters (when, rating, link or own file) above the list hide the rows that do not match.
 import { icon } from './design/icons.js'
 import { detailsButton } from './details.js'
 import { onRated, rate, rateEl, showRating } from './rating.js'
@@ -18,7 +19,91 @@ const lib = {
   picked: null,        // id of the picked row
   leaving: new Map(),  // id -> timer: removed, waiting for Undo
   live: null,          // { row_id, frac } of the "Clean and play" job running now
-  drawn: false         // after the first draw, new rows slide in
+  drawn: false,        // after the first draw, new rows slide in
+  q: '',               // T10.6: the search text (name)
+  f: { when: '', rating: '', from: '' }   // T10.6: the filters ('' = any)
+}
+
+// ---------- Search and filters (T10.6) ----------
+// Rows that do not match are only hidden (kept in the list), so typing never rebuilds or re-animates them.
+// Letters are compared without case and accents (é = e, Arabic short vowels ignored); every word must be in the name.
+const fold = (s) => (s || '').normalize('NFKD').replace(/[̀-ًͯ-ٰٟ]/g, '').toLowerCase()
+const DAY = 86400000
+const FILTER_TEXT = {
+  when: { today: 'Today', week: 'Last 7 days', month: 'Last 30 days' },
+  rating: { none: 'Not rated', bad: 'Bad', good: 'Good', perfect: 'Perfect' },
+  from: { link: 'Links', own: 'Own files' }
+}
+
+function matches(it) {
+  const name = fold(it.title)
+  if (!fold(lib.q).split(/\s+/).filter(Boolean).every((w) => name.includes(w))) return false
+  const { when, rating, from } = lib.f
+  if (when) {
+    const added = new Date(it.added)
+    const today = new Date(new Date().toDateString())
+    if (when === 'today' ? added < today : Date.now() - added > (when === 'week' ? 7 : 30) * DAY) return false
+  }
+  if (rating && (it.rating || 'none') !== rating) return false
+  if (from && (/^https?:\/\//i.test(it.source || '') ? 'link' : 'own') !== from) return false
+  return true
+}
+
+const filtering = () => !!lib.q.trim() || Object.values(lib.f).some(Boolean)
+
+const search = $('#lib-q')
+const filterToggle = $('#lib-filter-toggle')
+const filters = $('#lib-filters')
+
+function setSearch(text) {
+  search.value = text
+  lib.q = text
+  $('#lib-q-clear').hidden = !text
+  draw()
+}
+search.addEventListener('input', () => setSearch(search.value))
+$('#lib-q-clear').addEventListener('click', () => { setSearch(''); search.focus() })
+search.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    // A first Escape clears the text, a second leaves the box (and never reaches the player behind it)
+    e.preventDefault()
+    if (search.value) setSearch('')
+    else search.blur()
+  } else if (e.key === 'ArrowDown') {
+    const first = $('li[data-id]:not(.is-leaving):not([hidden]) .lib-row', list)
+    if (first) { e.preventDefault(); first.focus() }
+  }
+})
+
+function setFilters(open) {
+  filterToggle.setAttribute('aria-expanded', open)
+  filters.dataset.open = open
+  $$('button', filters).forEach((b) => { b.tabIndex = open ? 0 : -1 })
+}
+filterToggle.addEventListener('click', () => setFilters(filterToggle.getAttribute('aria-expanded') !== 'true'))
+
+// One choice per group; clicking the chosen one again sets the group back to any
+function setFilter(group, value) {
+  lib.f[group] = value
+  for (const b of $$(`[data-filter="${group}"] button`, filters)) b.setAttribute('aria-pressed', b.dataset.value === value)
+  draw()
+}
+filters.addEventListener('click', (e) => {
+  const b = e.target.closest('.lib-chips button')
+  if (!b) return
+  const group = b.closest('[data-filter]').dataset.filter
+  setFilter(group, lib.f[group] === b.dataset.value ? '' : b.dataset.value)
+})
+function clearFilters() { for (const group of Object.keys(lib.f)) setFilter(group, '') }
+$('#lib-filter-clear').addEventListener('click', () => { clearFilters(); filterToggle.focus() })
+$('#lib-show-all').addEventListener('click', () => { clearFilters(); setSearch('') })
+
+function noneText() {
+  const parts = Object.entries(lib.f).filter(([, v]) => v).map(([g, v]) => FILTER_TEXT[g][v])
+  const q = lib.q.trim()
+  if (q && parts.length) return `No file named “${q}” in ${parts.join(' · ')}.`
+  if (q) return `No file named “${q}”.`
+  return `No file in ${parts.join(' · ')}.`
 }
 
 // 'Today, 14:03', 'Yesterday, 09:12' or '12 Nov' (old Naqi when_text)
@@ -111,10 +196,11 @@ function play(id) {
 
 // Rows are kept by id: new ones slide in, the rest stay still (so the light and an open row do not jump)
 function draw() {
-  const shown = lib.items.filter((it) => !lib.leaving.has(it.id))
+  const all = lib.items.filter((it) => !lib.leaving.has(it.id))
+  const shown = all.filter(matches)
   const rows = new Map($$('li[data-id]', list).map((li) => [Number(li.dataset.id), li]))
-  for (const [id, li] of rows) if (!shown.some((it) => it.id === id) && !li.classList.contains('is-leaving')) li.remove()
-  for (const it of shown) {
+  for (const [id, li] of rows) if (!all.some((it) => it.id === id) && !li.classList.contains('is-leaving')) li.remove()
+  for (const it of all) {
     let li = rows.get(it.id)
     if (!li) {
       li = rowEl(it)
@@ -122,13 +208,20 @@ function draw() {
       if (lib.drawn) li.classList.add('is-new')
     }
     fill(li, it)
+    li.hidden = !shown.includes(it)
     list.append(li)   // in order, newest first
   }
   lib.drawn = true
   if (lib.picked && !shown.some((it) => it.id === lib.picked)) lib.picked = null
-  $('#lib-count').textContent = shown.length
-  $('#lib-count').hidden = !shown.length
-  $('#lib-empty').hidden = shown.length > 0
+  const narrowed = filtering()
+  $('#lib-count').textContent = narrowed ? `${shown.length} of ${all.length}` : all.length
+  $('#lib-count').hidden = !all.length
+  $('#lib-empty').hidden = all.length > 0
+  $('#lib-find').hidden = !all.length
+  filterToggle.dataset.on = Object.values(lib.f).some(Boolean)
+  $('#lib-filter-clear').hidden = !Object.values(lib.f).some(Boolean)
+  $('#lib-none').hidden = !(all.length && !shown.length)
+  if (all.length && !shown.length) $('#lib-none-text').textContent = noneText()
   list.hidden = !shown.length
   mark()
 }
@@ -161,10 +254,13 @@ function pick(id) {
 
 // Up / Down move between rows, Enter picks a row and plays the picked one, Escape closes it, Delete removes it
 list.addEventListener('keydown', (e) => {
-  const rows = $$('li[data-id]:not(.is-leaving) .lib-row', list)
+  const rows = $$('li[data-id]:not(.is-leaving):not([hidden]) .lib-row', list)
   const i = rows.indexOf(document.activeElement)
   const id = i >= 0 ? Number(rows[i].closest('li').dataset.id) : null
-  if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && i >= 0) {
+  if (e.key === 'ArrowUp' && i === 0 && !$('#lib-find').hidden) {
+    e.preventDefault()
+    search.focus()   // Up from the first row goes back to the search box
+  } else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && i >= 0) {
     e.preventDefault()
     rows[Math.max(0, Math.min(rows.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))].focus()
   } else if (e.key === 'Enter' && id !== null && lib.picked === id) {

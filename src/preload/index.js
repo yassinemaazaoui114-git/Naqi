@@ -20,9 +20,10 @@ contextBridge.exposeInMainWorld('naqi', {
   onPicture: (fn) => ipcRenderer.on('engine-picture', (_event, item) => fn(item)),
   // Player (engine/player.py): open a library item -> { id, title, from, added, kind, rating, live, length, picture },
   // picture = { type: 'none' } | { type: 'file', item: picture item } | { type: 'stream', state, at, text };
-  // action 'convert' (the picture did not play as it is) or 'stream' (the stream was refused: look it up again).
+  // action 'convert' (the picture did not play as it is), 'stream' (the stream was refused: look it up again) or
+  // 'quality' with a height (null = Auto, 1080 / 720 / 480 / 360: a link's picture at that size, SPEC R39).
   // Its media are at naqi-media://engine/<id>/sound, /pictures/<picture id>/part|full, /stream/<id>
-  openPlayer: (id, action) => ipcRenderer.invoke('player-open', id, action),
+  openPlayer: (id, action, height) => ipcRenderer.invoke('player-open', id, action, height),
   onStream: (fn) => ipcRenderer.on('engine-stream', (_event, s) => fn(s)),
   // Save (engine/saves.py): a played item as MP3 / MP4 into the Save to day folder; spec = { fmt: 'mp3' | 'mp4',
   // size: 'Original' | '1080p' | '720p' | '480p', kbps: 128 | 192 | 320 } -> the save { id, row_id, state, frac, text, path }
@@ -52,6 +53,11 @@ contextBridge.exposeInMainWorld('naqi', {
   getSettings: () => ipcRenderer.invoke('settings-get'),
   setSettings: (patch) => ipcRenderer.invoke('settings-set', patch),
   chooseFiles: () => ipcRenderer.invoke('choose-files'),
+  // Settings page (T11.2): the keep rule -> { days, gb, used (bytes), removed? }; GPU or CPU ('gpu' | 'cpu'): the
+  // engine starts again (refused while something is cleaned or saved)
+  keepRule: () => ipcRenderer.invoke('keep-get'),
+  setKeepRule: (days, gb) => ipcRenderer.invoke('keep-set', days, gb),
+  setDevice: (device) => ipcRenderer.invoke('device-set', device),
   chooseFolder: () => ipcRenderer.invoke('choose-folder'),         // -> new settings, or null
   clipboardText: () => ipcRenderer.invoke('clipboard-text'),
   // The clipboard for Home's copied-link offer (T10.4); empty during the other self-tests and the demo

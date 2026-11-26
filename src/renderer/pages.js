@@ -1,10 +1,10 @@
-// The pages of the content column (Home, the player, Report a slip): one is shown at a time, in the same place.
+// The pages of the content column (Home, the player, Report a slip, Settings): one is shown at a time, in the same place.
 // They sit on one line, Home first: a page further along (the player, then the report) slides in from the right,
 // going back slides in from the left, so the window always says which way you went (home.css). A change made with
 // the keyboard (Escape) swaps at once: something done many times a day should not wait for motion.
 // Everyone hears about a change through a 'naqi-page' event.
-const PAGES = { home: '.home', player: '#watch', report: '#report' }
-const DEPTH = { home: 0, player: 1, report: 2 }
+const PAGES = { home: '.home', player: '#watch', report: '#report', settings: '#settings' }
+const DEPTH = { home: 0, player: 1, report: 2, settings: 3 }
 let current = 'home'
 
 export const shown = () => current

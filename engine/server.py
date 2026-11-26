@@ -15,8 +15,10 @@ Report a slip (cases.py): GET /cases (how many are saved), POST /cases/source ({
 about), POST /cases (save one: the sound is copied or downloaded, so the answer can take a while).
 Player (player.py): POST /player/<id> (open a library item: what to play and its picture), POST /player/<id>/convert
 (the browser could not show the picture as it is), POST /player/<id>/stream (the site refused the stream address:
-look it up again); media for the page's <audio> and <video>, with byte ranges: GET /media/<id>/sound (the clean part
+look it up again), POST /player/<id>/quality {"height": null | 1080 | 720 | 480 | 360} (a link's picture size); media for the page's <audio> and <video>, with byte ranges: GET /media/<id>/sound (the clean part
 only, while it is cleaned), GET /media/pictures/<picture id>/part | full, GET /media/stream/<id> (a link's picture).
+Settings (T11.2): GET /keep (the keep rule and the space kept sounds take), POST /keep {"days", "gb"} (a new rule; it
+is applied at once when nothing runs). NAQI_DEVICE=cpu starts the engine on the CPU even with a graphics card.
 """
 import ctypes
 import hmac
@@ -31,6 +33,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 if getattr(sys, "frozen", False):   # the installed engine (T7.1): ffmpeg, ffprobe and deno come with it, in bin\
     os.environ["PATH"] = os.path.join(sys._MEIPASS, "bin") + os.pathsep + os.environ.get("PATH", "")
+
+# Settings: CPU only (T11.2). PyTorch then sees no graphics card, before any module loads it
+CPU_CHOSEN = os.environ.get("NAQI_DEVICE") == "cpu"
+if CPU_CHOSEN:
+    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"   # "" is not enough for this PyTorch
 
 import ytdlp_update  # noqa: E402
 
@@ -47,6 +54,8 @@ import saves  # noqa: E402
 HEARTBEAT_S = 15   # an empty comment line on the event stream this often, so a dead connection is noticed
 MAX_BODY = 64 * 1024
 MEDIA_CHUNK = 256 * 1024
+_sizes = {}                      # cleaned.wav path -> the largest size the player was told (_send_file keep_size)
+_sizes_lock = threading.Lock()
 MEDIA_TYPES = {".wav": "audio/wav", ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".mp4": "video/mp4",
                ".m4v": "video/mp4", ".mov": "video/quicktime", ".mkv": "video/x-matroska", ".webm": "video/webm"}
 
@@ -95,7 +104,8 @@ def _start_up():
         cuda = torch.cuda.is_available()
         _gpu.update(device="cuda" if cuda else "cpu", name=speech_only.device_name(), torch=torch.__version__,
                     cuda=torch.version.cuda if cuda else None,
-                    vram_total_mb=round(torch.cuda.get_device_properties(0).total_memory / 2**20) if cuda else None)
+                    vram_total_mb=round(torch.cuda.get_device_properties(0).total_memory / 2**20) if cuda else None,
+                    chosen="cpu" if CPU_CHOSEN else "auto")
         emit("gpu", dict(_gpu))
         for name in speech_only.MODEL_FILES.values():
             speech_only._model_file(name)   # raises a clear message when a model file is missing
@@ -140,7 +150,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._allowed():
             return
         if self.path == "/health":
-            self._json({**_state, "ytdlp": ytdlp_update.version(), "python": platform.python_version()})
+            self._json({**_state, "ytdlp": ytdlp_update.version(), "python": platform.python_version(), "busy": not _idle()})
         elif self.path == "/gpu":
             self._json(_gpu)
         elif self.path == "/events":
@@ -162,6 +172,8 @@ class Handler(BaseHTTPRequestHandler):
             self._muted(self._job_path("library")[0])
         elif self.path == "/cases":
             self._json({"count": len(cases.read_cases())})
+        elif self.path == "/keep":
+            self._json(history.keep_rule())
         elif self.path.startswith("/media/"):
             self._media(self.path.split("?")[0].strip("/").split("/")[1:])
         else:
@@ -211,6 +223,8 @@ class Handler(BaseHTTPRequestHandler):
             self._open_player(*self._job_path("player"))
         elif self.path in ("/cases", "/cases/source"):
             self._report()
+        elif self.path == "/keep":
+            self._keep()
         else:
             self._json({"error": "not found"}, 404)
 
@@ -220,6 +234,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(_player.convert(row_id))
             elif action == "stream":
                 self._json(_player.refind(row_id))
+            elif action == "quality":
+                self._json(_player.quality(row_id, self._body().get("height")))
             elif action is None:
                 it = _player.open(row_id, _jobs.get(_jobs.job["id"]) if _jobs.job else None)
                 running = _saves.item if _saves.item and _saves.item["state"] == "running" else None
@@ -229,6 +245,21 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "not found"}, 404)
         except ValueError as e:   # gone, must be cleaned again ("again"), or not in the library
             self._json({"error": str(e)}, 409)
+
+    def _keep(self):
+        """A new keep rule from Settings. Applied now when nothing is cleaned or saved, else after that job."""
+        try:
+            spec = self._body()
+            history.set_keep(spec.get("days"), spec.get("gb"))
+        except (ValueError, TypeError, AttributeError) as e:
+            return self._json({"error": str(e)}, 400)
+        removed = 0
+        if _idle():
+            try:
+                removed = history.clean_history()
+            except Exception:
+                pass   # tried again after the next job and at the next start
+        self._json({**history.keep_rule(), "removed": removed})
 
     def _report(self):
         """Report a slip. Runs on this request's own thread (the server has one per request), so a slow copy or
@@ -266,7 +297,7 @@ class Handler(BaseHTTPRequestHandler):
         """The page's <audio> / <video> read these (through Electron, which adds the token)."""
         if len(parts) == 2 and parts[0].isdigit() and parts[1] == "sound":
             row_id = int(parts[0])
-            self._send_file(_player.sound_path(row_id), hold=lambda: player.clean_edge(_jobs.job, row_id))
+            self._send_file(_player.sound_path(row_id), hold=lambda: player.clean_edge(_jobs.job, row_id), keep_size=True)
         elif len(parts) == 3 and parts[0] == "pictures" and parts[1].isdigit() and parts[2] in ("part", "full"):
             item = _pictures.get(int(parts[1]))
             self._send_file(item and item.get(parts[2]))
@@ -275,13 +306,19 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._json({"error": "not found"}, 404)
 
-    def _send_file(self, path, hold=lambda: None):
+    def _send_file(self, path, hold=lambda: None, keep_size=False):
         """A file with byte ranges. hold() -> the bytes that are final so far (None: all of it): a request past
         them waits until they are, so the browser never plays the silence of the part not clean yet. The file is
-        opened for each piece only, so a cancelled cleaning or a Remove can still delete it."""
+        opened for each piece only, so a cancelled cleaning or a Remove can still delete it.
+        keep_size: the size first sent stays (cleaned.wav is cut to its exact length once all is clean, often a
+        little shorter than the length guessed at the start, when the sound ends before the picture); the browser
+        still asks for the length it was told, gets silence past the real end and reaches the end."""
         if not path or not os.path.isfile(path):
             return self._json({"error": "not found"}, 404)
         size = os.path.getsize(path)
+        if keep_size:
+            with _sizes_lock:
+                size = _sizes[path] = max(size, _sizes.get(path, 0))
         a, b = 0, size - 1
         rng = self.headers.get("Range", "")
         if rng.startswith("bytes="):
@@ -327,27 +364,23 @@ class Handler(BaseHTTPRequestHandler):
         if not found:
             return self._json({"error": "no stream"}, 404)
         try:
-            up = player.open_stream(*found, self.headers.get("Range"))
+            status, out, body = player.open_stream(*found, self.headers.get("Range"))
         except Exception as e:   # refused (often 403) or no answer: the page looks it up once more
             return self._json({"error": str(e)}, getattr(e, "code", None) or 502)
         try:
-            self.send_response(up.status)
-            for key in ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"):
-                if up.headers.get(key):
-                    self.send_header(key, up.headers[key])
-            if not up.headers.get("Content-Length"):
+            self.send_response(status)
+            for key, value in out.items():
+                self.send_header(key, value)
+            if "Content-Length" not in out:
                 self.send_header("Connection", "close")
                 self.close_connection = True
             self.end_headers()
-            while True:
-                data = up.read(MEDIA_CHUNK)
-                if not data:
-                    break
+            for data in body:
                 self.wfile.write(data)
-        except OSError:
+        except OSError:   # the page dropped this request (it does on every jump), or a later piece was refused
             self.close_connection = True
         finally:
-            up.close()
+            body.close()
 
     def _job_path(self, base="jobs"):
         """/<base>/<id> or /<base>/<id>/<action> -> (id, action or None); None for any other path."""

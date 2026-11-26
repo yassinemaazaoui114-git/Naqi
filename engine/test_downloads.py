@@ -81,7 +81,7 @@ except (DownloadCancelled, DownloadError) as ex:
     check("cancel stops the download", "Cancelled" in str(ex), type(ex).__name__)
 
 # ----- player picture: streamed, not downloaded -----
-url, headers, start = downloads.video_stream(SHORT)
+url, headers, start, _ = downloads.video_stream(SHORT)
 check("video stream address", bool(url) and url.startswith("https://"), f"{len(headers)} headers")
 
 # ----- Save: the picture only, 240 lines at most -----

@@ -72,7 +72,7 @@ try:
           downloads.yt_dlp.__file__)
     check("downloads.py uses it too", downloads.yt_dlp.version.__version__ == latest
           and downloads.DownloadCancelled is sys.modules["yt_dlp.utils"].DownloadCancelled)
-    url, headers, at = downloads.video_stream(SHORT)
+    url, headers, at, _ = downloads.video_stream(SHORT)
     check("a link is read with the swapped-in yt-dlp", bool(url and url.startswith("http")))
 
     # A new engine start picks the downloaded copy before yt_dlp is imported
@@ -130,7 +130,7 @@ try:
     yu._info["asked"] = time.time()
     check("broken copy not used", not yu.fresh() and downloads.yt_dlp.version.__version__ == own and not under_dir())
     check("broken copy marked bad", "2999.01.01" in json.load(open(yu.STATE)).get("bad", []))
-    url, headers, at = downloads.video_stream(SHORT)
+    url, headers, at, _ = downloads.video_stream(SHORT)
     check("links still work after the broken copy", bool(url))
 
     # The retry rule: only a site-changed failure, only once, only when a newer yt-dlp is in use

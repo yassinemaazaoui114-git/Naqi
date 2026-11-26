@@ -75,21 +75,28 @@ export function setupLaunch() {
     el.classList.add('is-leaving')
     // Each flight lines up one piece of the intro with the same piece on the page (the ring: logo and name); it leaves
     // at once and settles softly (the drawer curve), so nothing still sits in the middle when Home shows
+    // The library folded away (T11.1): the logo lands on the strip, the name has no place there and fades
+    const folded = document.body.dataset.side === 'closed'
     const flights = [v, ...(v.also || [])].map((f) => {
       const fly = el.querySelector(f.fly)
-      const target = document.querySelector(f.to)
-      const to = target?.getBoundingClientRect()
+      const to = folded ? (f.to.endsWith(' img') ? '.rail-logo' : null) : f.to
+      if (!to) return { f, fly, gone: true }
+      const target = document.querySelector(to)
+      const box = target?.getBoundingClientRect()
       const size = (node) => parseFloat(getComputedStyle(node).fontSize)
       // A headline that wraps on a narrow window would not land on one line: it fades instead
-      const lands = to && to.width && !(f.line && to.height > size(target) * 1.6)
-      return { f, fly, target, to, lands, scale: lands && (f.line ? size(target) / size(fly) : null) }
+      const lands = box && box.width && !(f.line && box.height > size(target) * 1.6)
+      return { f, fly, target, to: box, lands, scale: lands && (f.line ? size(target) / size(fly) : null) }
     })
-    if (reduce || flights.some((x) => !x.lands)) {
-      for (const { fly } of flights) fly.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'ease-out', fill: 'forwards' })
+    const fade = (fly) => fly.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'ease-out', fill: 'forwards' })
+    for (const { fly } of flights.filter((x) => x.gone)) fade(fly)
+    const flying = flights.filter((x) => !x.gone)
+    if (reduce || flying.some((x) => !x.lands)) {
+      for (const { fly } of flying) fade(fly)
       setTimeout(done, 340)
       return
     }
-    const landed = flights.map(({ f, fly, target, to, scale }) => {
+    const landed = flying.map(({ f, fly, target, to, scale }) => {
       const box = fly.getBoundingClientRect()
       const from = el.querySelector(f.from).getBoundingClientRect()
       if (v.hide) { hidden.push(target); target.style.visibility = 'hidden' }
