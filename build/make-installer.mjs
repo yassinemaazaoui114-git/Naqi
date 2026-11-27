@@ -42,6 +42,9 @@ cpSync(join(root, 'out'), join(res, 'out'), { recursive: true })
 cpSync(join(root, 'build', 'icon.ico'), join(res, 'build', 'icon.ico'))
 cpSync(engine, join(app, 'resources', 'engine'), { recursive: true })
 run('py', ['-3.12', join('build', 'exe_resources.py'), join(app, 'Naqi.exe'), join(root, 'build', 'icon.ico'), pkg.version])
+// credits and licence texts (SPEC 2c): THIRD-PARTY-NOTICES.txt with the packed Python packages listed, and licenses\
+cpSync(join(root, 'licenses'), join(app, 'licenses'), { recursive: true })
+run('py', ['-3.12', join('build', 'third_party.py'), join(app, 'resources', 'engine'), join(app, 'THIRD-PARTY-NOTICES.txt')])
 
 step('4/4 Making the installer (Inno Setup)...')
 run(iscc, ['/Q', `/DSourceDir=${app}`, `/DAppVersion=${pkg.version}`, `/O${join(out, 'installer')}`,

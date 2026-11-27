@@ -185,18 +185,31 @@ the downloader's own updates.
 
 ## License
 
-Naqi is released under the [MIT License](LICENSE).
+Naqi is released under the [MIT License](LICENSE). It is meant for **personal use**: downloading or streaming a video
+is subject to that site's own terms (YouTube's allow personal, non-commercial use).
 
 The code in `engine/separators/` comes from
 [Music-Source-Separation-Training](https://github.com/ZFTurbo/Music-Source-Separation-Training) and keeps its own MIT
-license (`engine/separators/LICENSE`). Model files are not covered by this license and remain under their authors'
-terms.
+license (`engine/separators/LICENSE`); its `bandit_v2/` part is Apache-2.0 (`engine/separators/bandit_v2/LICENSE`).
+Model files are not covered by Naqi's license and remain under their authors' terms. Every part the installed app
+ships, with its license, is listed in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt); full texts are in
+`licenses/`.
 
-## Acknowledgements
+## Credits
 
-[yt-dlp](https://github.com/yt-dlp/yt-dlp) ·
-[ffmpeg](https://ffmpeg.org) ·
-[PyTorch](https://pytorch.org) ·
-[Music-Source-Separation-Training](https://github.com/ZFTurbo/Music-Source-Separation-Training) ·
-[Bandit v2](https://zenodo.org/records/12701995) ·
-[Demucs](https://github.com/facebookresearch/demucs) (used in the benchmarks)
+| Part | By | License |
+|---|---|---|
+| [Mel-Band Roformer](https://huggingface.co/KimberleyJSN/melbandroformer) weights (the voice model) | Kimberley Jensen | MIT |
+| [Bandit v2](https://zenodo.org/records/12701995) weights (the sound-effects model), trained on Divide and Remaster v3 | Karn N. Watcharasupat, Chih-Wei Wu, Iroro Orife | CC BY-SA 4.0 |
+| [Bandit v2 code](https://github.com/kwatcharasupat/bandit-v2) | Karn N. Watcharasupat | Apache-2.0 |
+| [Music-Source-Separation-Training](https://github.com/ZFTurbo/Music-Source-Separation-Training) (model code) | Roman Solovyev (ZFTurbo) | MIT |
+| [FFmpeg](https://ffmpeg.org) 9.0.2, [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) build ([source](https://github.com/FFmpeg/FFmpeg/commit/946fcce07b)) | the FFmpeg developers | GPLv3 |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | the yt-dlp contributors | Unlicense |
+| [Deno](https://github.com/denoland/deno) | the Deno authors | MIT |
+| [PyTorch](https://pytorch.org), torchaudio | the PyTorch contributors | BSD-style |
+| [Electron](https://www.electronjs.org) | the Electron contributors | MIT |
+
+Benchmark data (on the developer's PC only, never shipped): [MUSAN](https://www.openslr.org/17/) (CC BY 4.0),
+[MUSDB18](https://zenodo.org/records/1117372) (non-commercial), [ESC-50](https://github.com/karolpiczak/ESC-50)
+(CC BY-NC 3.0; its ESC-10 part CC BY), AVA-Speech / SMAD. [Demucs](https://github.com/facebookresearch/demucs) (MIT)
+is used in the benchmarks.

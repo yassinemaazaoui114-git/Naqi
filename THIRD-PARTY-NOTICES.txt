@@ -1,0 +1,79 @@
+NAQI - THIRD-PARTY NOTICES
+
+Naqi itself is released under the MIT License (LICENSE). It ships the parts below, each under its own licence.
+The full licence texts named here are in the "licenses" folder next to this file.
+
+
+MODELS
+
+Mel-Band Roformer weights (MelBandRoformer.ckpt), by Kimberley Jensen
+  Source: https://huggingface.co/KimberleyJSN/melbandroformer
+  Licence: MIT
+
+  Copyright (c) Kimberley Jensen
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+  documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+  the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and
+  to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+  the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+  THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+  CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+  IN THE SOFTWARE.
+
+Bandit v2 weights (bandit_v2_multi.ckpt), by Karn N. Watcharasupat, Chih-Wei Wu and Iroro Orife,
+trained on Divide and Remaster v3 (Netflix)
+  Source: https://zenodo.org/records/12701995
+  Licence: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+           https://creativecommons.org/licenses/by-sa/4.0/
+  Naqi uses the weights unchanged.
+
+
+MODEL CODE
+
+Music-Source-Separation-Training, by Roman Solovyev (ZFTurbo)
+  Source: https://github.com/ZFTurbo/Music-Source-Separation-Training
+  Licence: MIT (text in engine/separators/LICENSE of Naqi's source)
+
+Bandit v2 code (engine/separators/bandit_v2), by Karn N. Watcharasupat
+  Source: https://github.com/kwatcharasupat/bandit-v2 (copied through Music-Source-Separation-Training)
+  Licence: Apache License 2.0 (licenses/Apache-2.0.txt)
+  The authors ask commercial users to consider a donation to a music non-profit.
+
+
+PROGRAMS
+
+FFmpeg 9.0.2 (ffmpeg.exe, ffprobe.exe), "full" build by www.gyan.dev
+  Licence: GNU General Public License version 3 (licenses/GPL-3.0.txt), as the build is made with
+  --enable-gpl --enable-version3
+  Source code: https://github.com/FFmpeg/FFmpeg/commit/946fcce07b
+  Build: https://www.gyan.dev/ffmpeg/builds/
+  Naqi runs ffmpeg and ffprobe as separate programs; they are not part of Naqi's own code.
+  FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project.
+
+Deno 2.9 (deno.exe), used by yt-dlp to read YouTube's player
+  Source: https://github.com/denoland/deno
+  Licence: MIT, Copyright (c) the Deno authors
+
+yt-dlp
+  Source: https://github.com/yt-dlp/yt-dlp
+  Licence: The Unlicense (public domain)
+
+Electron (the window), with Chromium, Node.js and their parts
+  Source: https://github.com/electron/electron
+  Licence: MIT; Chromium and the other parts: LICENSE and LICENSES.chromium.html in Naqi's app folder
+
+NVIDIA CUDA libraries (inside PyTorch)
+  Redistributed under the NVIDIA CUDA Toolkit End User License Agreement
+  https://docs.nvidia.com/cuda/eula/
+
+
+USE
+
+Naqi is meant for personal use. Downloading or streaming videos from a site is subject to that site's own terms
+(for YouTube: personal, non-commercial use).
