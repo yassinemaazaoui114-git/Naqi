@@ -60,9 +60,12 @@ contextBridge.exposeInMainWorld('naqi', {
   setDevice: (device) => ipcRenderer.invoke('device-set', device),
   chooseFolder: () => ipcRenderer.invoke('choose-folder'),         // -> new settings, or null
   clipboardText: () => ipcRenderer.invoke('clipboard-text'),
+  copyText: (text) => ipcRenderer.invoke('clipboard-write', text),
   // The clipboard for Home's copied-link offer (T10.4); empty during the other self-tests and the demo
   clipboardOffer: () => ipcRenderer.invoke('clipboard-offer'),
   showInFolder: (path) => ipcRenderer.invoke('show-in-folder', path),
+  // Share to Naqi (T11.5): a naqi:// link from the "Clean in Naqi" bookmark -> { url } (clean and play it) or { error }
+  onLink: (fn) => ipcRenderer.on('naqi-link', (_event, link) => fn(link)),
   // Copy details on an engine error: { where, title, text } -> the text put on the clipboard (no private data)
   copyDetails: (what) => ipcRenderer.invoke('error-details', what)
 })

@@ -73,7 +73,7 @@ export async function run(win, engine) {
   try {
     const data = process.env.NAQIE_DATA || ''
     if (!/naqie-t10\.2c[\\/]?$/.test(data)) throw new Error('NAQIE_DATA must be a folder named naqie-t10.2c (the real history is never used)')
-    rmSync(data, { recursive: true, force: true })
+    try { rmSync(data, { recursive: true, force: true }) } catch { /* the engine may have it open already: emptied before the run */ }
     await page(`document.body.removeAttribute('data-theater')`)
     check('engine ready with the models', await until(async () => engine.status.status === 'ready' && (await engine.call('/health')).models, 120000), engine.status.gpu?.name)
     await cleanAndPlay(VIDEO)

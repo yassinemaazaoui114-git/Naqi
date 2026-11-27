@@ -24,8 +24,9 @@ DOWNLOAD_SHARE = 0.4    # part of the progress bar used by the download; the res
 SOUND_SHARE = 0.1       # the same for "Clean and play", which downloads only the sound
 # The picture of a link is streamed, not downloaded (SPEC R14d): video only (the cleaned sound replaces its sound),
 # up to 1080p ("Auto"), or the size picked in the player's settings menu (SPEC R39). "res" is the shorter side, so a
-# standing video (1080 x 1920) is 1080p too
-STREAM_FORMAT = "bv/b"
+# standing video (1080 x 1920) is 1080p too. A plain web address first: the window's <video> cannot play an HLS
+# playlist (m3u8), and YouTube now ranks one first on some videos ("Premium"); a link with only HLS still gets it
+STREAM_FORMAT = "bv[protocol^=http]/bv/b"
 STREAM_AUTO = 1080
 STREAM_HEIGHTS = (1080, 720, 480, 360)
 

@@ -46,7 +46,7 @@ const p = {
 }
 
 // Measured by the self-test: start, sync of every shown frame, waits at the clean edge
-const stats = { firstPlaying: null, sync: [], waits: [], jumps: [] }
+const stats = { firstPlaying: null, sync: [], waits: [], jumps: [], frames: [] }
 window.naqiPlayerStats = () => ({ ...stats, now: performance.now(), at: audio.currentTime, using: p.using,
   waiting: p.waiting, ready: p.ready, live: p.live, length: p.length, mutes: p.mutes, id: p.id,
   corner: !document.querySelector('#corner').hidden, paused: audio.paused, ended: audio.ended, duration: audio.duration, readyState: audio.readyState, rate: audio.playbackRate, pitch: audio.preservesPitch })
@@ -207,7 +207,30 @@ function soundOnly(text) {
   if (text) showNote(text)
 }
 
+// Upright pictures (ROADMAP T13.3, SPEC R47): a picture taller than wide makes the player an upright card shaped like
+// it (player.css), the corner too. The screen grows from its old size into the new one (a size swap keeps the shape).
+const watch = $('#watch')
+function setShape(w, h) {
+  const tall = w > 0 && h > w
+  const ratio = tall ? `${w} / ${h}` : ''
+  if ((watch.dataset.shape === 'tall') === tall && watch.style.getPropertyValue('--ratio') === ratio) return
+  const from = screen.getBoundingClientRect()
+  for (const el of [watch, corner]) {
+    el.dataset.shape = tall ? 'tall' : 'wide'
+    if (tall) el.style.setProperty('--ratio', ratio)
+    else el.style.removeProperty('--ratio')
+  }
+  const to = screen.getBoundingClientRect()
+  if (!from.width || !to.width || document.fullscreenElement || matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  screen.animate({ width: [`${from.width}px`, `${to.width}px`], height: [`${from.height}px`, `${to.height}px`] },
+    { duration: 280, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' })
+}
+video.addEventListener('resize', () => { if (video.videoWidth) setShape(video.videoWidth, video.videoHeight) })
+window.naqiShape = () => ({ shape: watch.dataset.shape, ratio: watch.style.getPropertyValue('--ratio'),
+  corner: corner.dataset.shape, w: video.videoWidth, h: video.videoHeight })
+
 function dropPicture() {
+  setShape(0, 0)
   p.using = null
   p.streamFound = 0
   releaseHold(true)
@@ -352,6 +375,7 @@ const soundPlays = () => !audio.paused && !p.waiting && audio.readyState >= 3
 let settleUntil = 0
 let integ = 0
 function onFrame(_now, meta) {
+  noteFrame(meta)
   if (p.using && !video.paused && soundPlays()) {
     // At another speed (T10.5) the sound moves `rate` seconds a second, and the picture's own speed is that rate
     // nudged the same way
@@ -407,7 +431,10 @@ audio.addEventListener('waiting', () => {
 audio.addEventListener('pause', () => { video.pause(); draw() })
 audio.addEventListener('ended', () => { video.pause(); draw() })
 audio.addEventListener('seeked', () => {
-  if (p.using && video.readyState >= 1) video.currentTime = audio.currentTime + 0.03
+  // A frame step lands the picture in the middle of its frame, so it shows that frame and no other
+  // A frame step already moved the picture to its frame
+  const step = fr.stepAt !== null && Math.abs(audio.currentTime - fr.stepAt) < 0.002
+  if (p.using && video.readyState >= 1 && !step) video.currentTime = audio.currentTime + 0.03
   settleUntil = performance.now() + 2000
   integ = 0
   followSound()
@@ -416,6 +443,43 @@ audio.addEventListener('error', () => {
   if (p.id === null || !audio.getAttribute('src')) return
   showNote('The cleaned sound could not be played. Try again from the library.', true)
 })
+
+// ---------- Frame step (ROADMAP T13.1) ----------
+// While paused, `,` / `.` show the frame before / after the one on screen (like YouTube). A frame lasts what the gaps
+// between frames measured while playing say (their median, so a dropped frame does not count), else 1/30 s. The
+// sound moves to the frame's start and the picture to its middle at once (not after the sound's seek), so the play
+// that follows starts in sync.
+const FRAME_FALLBACK_S = 1 / 30
+const fr = { shown: null, count: 0, gaps: [], pending: null, stepAt: null }   // pending: the frame asked for, not shown yet
+function noteFrame(meta) {
+  if (!video.paused && fr.shown !== null && meta.presentedFrames === fr.count + 1) {
+    const gap = meta.mediaTime - fr.shown
+    if (gap > 0.004 && gap < 0.2) { fr.gaps.push(gap); if (fr.gaps.length > 40) fr.gaps.shift() }
+  }
+  fr.shown = meta.mediaTime
+  fr.count = meta.presentedFrames
+  if (!video.seeking) fr.pending = null   // a frame from an earlier step of quick presses does not count
+}
+function frameS() {
+  if (!fr.gaps.length) return FRAME_FALLBACK_S
+  const g = [...fr.gaps].sort((a, b) => a - b)
+  return g[Math.floor(g.length / 2)]
+}
+video.addEventListener('emptied', () => { fr.shown = null; fr.gaps = []; fr.pending = null })
+function stepFrame(dir) {
+  if (p.id === null || !audio.paused || !p.using || video.readyState < 1 || fr.shown === null) return   // seeking (the step before) is fine
+  const d = frameS()
+  const start = (fr.pending ?? fr.shown) + dir * d   // a press before the last step's frame showed goes on from it
+  if (start < -d / 2) return
+  if (dir > 0 && p.live && start > p.ready - JUMP_MARGIN_S) return showNote('Only the lit part is clean so far.')
+  if (dir > 0 && ((p.using === 'part' && start > p.partS - 0.3) || (video.duration && start + d > video.duration))) return
+  fr.pending = fr.stepAt = Math.max(0, start)
+  stats.frames.push({ from: fr.shown, to: fr.pending, d })
+  video.currentTime = fr.pending + d / 2
+  audio.currentTime = fr.pending
+  draw()
+}
+window.naqiFrame = () => ({ shown: fr.shown, d: frameS(), measured: fr.gaps.length, video: video.currentTime })
 
 // ---------- Controls ----------
 function toggle() {
@@ -616,10 +680,15 @@ export function setTheater(on, { save = false } = {}) {
   theater = on
   theaterBtn.setAttribute('aria-pressed', on)
   setTip(theaterBtn, on ? 'Default view (T)' : 'Theater mode (T)')
+  $('#gear-theater').setAttribute('aria-checked', on)
   document.body.toggleAttribute('data-theater', on && pages.shown() === 'player')
   if (save) window.naqi.setSettings({ theater: on ? '1' : '0' })
 }
 theaterBtn.addEventListener('click', () => setTheater(!theater, { save: true }))
+// On a narrow screen these three live in the settings menu (T13.3); the theater switch keeps the menu open
+$('#gear-theater').addEventListener('click', () => setTheater(!theater, { save: true }))
+$('#gear-mini').addEventListener('click', () => { setGear(false, { instant: true }); showPage(false) })
+$('#gear-keys').addEventListener('click', () => setKeys(true))
 window.addEventListener('naqi-page', (e) => document.body.toggleAttribute('data-theater', theater && e.detail.page === 'player'))
 
 // The keys card: the keys button or ? opens it; a click outside, the button again, ? or Escape closes it
@@ -883,7 +952,7 @@ window.naqiSleep = (minuteS) => { if (minuteS) sl.minute = minuteS; return { mod
 
 // Keys while the player is open and no other control takes the key (ROADMAP T10.1): Space / K play / pause,
 // M mute (old Naqi), Up / Down volume, Left / Right 5 s, Shift + arrows and J / L 10 s (like YouTube), F fullscreen,
-// T theater mode, I miniplayer (the corner), P picture-in-picture, ? the keys card,
+// T theater mode, I miniplayer (the corner), P picture-in-picture, `,` / `.` one frame while paused, ? the keys card,
 // Escape back.
 // Jumps go through jump(), so they stay inside the clean part like the time bar. A text box keeps its keys.
 const STEP_S = 5
@@ -927,6 +996,7 @@ document.addEventListener('keydown', (e) => {
   }
   if (e.shiftKey) return
   if (key === ' ' && !(el && el.tagName === 'BUTTON')) { e.preventDefault(); lightKey('space'); return toggle() }
+  if (key === ',' || key === '.') { e.preventDefault(); lightKey(key); return stepFrame(key === '.' ? 1 : -1) }
   if (key.length !== 1 || !'kjlmftip'.includes(key)) return
   if ((key === 't' || key === 'i') && document.fullscreenElement) return   // their buttons are out of sight there too
   lightKey(key)

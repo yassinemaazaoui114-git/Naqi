@@ -62,6 +62,35 @@
 .screen-tag { position: absolute; left: var(--s3); top: var(--s3); background: rgb(0 0 0 / 0.55); color: #d7fbe9; backdrop-filter: blur(8px); }
 .screen[data-waiting='true'] .screen-tag { opacity: 0; }
 
+/* Upright pictures (ROADMAP T13.3, SPEC R47): a picture taller than wide (Shorts, TikTok, Reels, a phone video) makes
+   the screen an upright card shaped like it, as tall as the player allows, in the middle (Yassine, 2026-11-27: like
+   YouTube's Shorts page); the card around it steps back so only the picture's card is seen. --ratio is its width /
+   height (player.js). Fullscreen is the whole display: there the picture fills the height. */
+.player { transition: background-color var(--t-normal) ease, border-color var(--t-normal) ease, box-shadow var(--t-normal) ease; }
+.watch[data-shape='tall'] .player {
+  container-type: size;
+  background-color: transparent; border-color: transparent; box-shadow: none; backdrop-filter: none;
+}
+.watch[data-shape='tall'] .screen:not(:fullscreen) {
+  flex: none; align-self: center; min-height: 0;
+  /* never narrower than its bar needs (a small window, 280 px): then the picture has thin black sides */
+  width: max(min(100cqw, 280px), min(100cqw, calc(100cqh * var(--ratio))));
+  height: min(100cqh, calc(100cqw / (var(--ratio))));
+}
+/* A narrow screen (an upright card, or a small window): the bar keeps play, volume, time, settings and fullscreen;
+   Miniplayer, Theater mode and Keys move into the settings menu (their keys I, T and ? still work) */
+.screen { container: screen / inline-size; }
+.gear-narrow { display: none; }
+@container screen (max-width: 400px) {
+  .screen-bar { padding-left: var(--s3); padding-right: var(--s3); }
+  .controls :is(#keys-toggle, #mini-toggle, #theater-toggle) { display: none; }
+  #gear-toggle { anchor-name: --keys; }
+  .screen .gear-narrow { display: flex; }
+  .controls > #gear-toggle::after { left: auto; right: 0; transform: translate(0, 4px) scale(0.97); transform-origin: bottom right; }
+  .controls > #gear-toggle:is(:hover, :focus-visible)::after { transform: none; }
+  .gear-menu { right: var(--s2); max-width: calc(100% - var(--s4)); }
+}
+
 /* The bar on the picture (ROADMAP T10.1b): time bar and controls over the bottom of the screen, on a soft shade.
    The screen is black in both themes, so the bar always uses the dark values (light-dark() is read where it is used),
    with white made a little stronger for a bright picture. While the picture plays and nothing holds it, it hides a
@@ -320,6 +349,9 @@
 .corner-row { display: flex; align-items: center; gap: 2px; min-width: 0; padding-left: var(--s2); }
 .corner-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); font-weight: 600; }
 .corner-sound { display: none; flex: none; color: var(--clean); margin-right: var(--s1); }
+/* An upright picture (T13.3): the card is narrower and stands up, shaped like it */
+.corner[data-shape='tall']:not([data-kind='audio']) { width: clamp(184px, 14vw, 220px); }
+.corner[data-shape='tall']:not([data-kind='audio']) .corner-screen { aspect-ratio: var(--ratio); max-height: calc(100vh - 150px); }
 .corner[data-kind='audio'] .corner-screen { aspect-ratio: auto; height: 3px; border-radius: 2px; background: none; order: 1; }
 .corner[data-kind='audio'] .corner-pic { display: none; }
 .corner[data-kind='audio'] .corner-peek { border-radius: 2px; }

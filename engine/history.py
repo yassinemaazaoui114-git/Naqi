@@ -24,6 +24,32 @@ CACHE_NAME = "cleaned.wav"        # "Clean and play": the cleaned sound, in the 
 
 _history_lock = threading.Lock()   # jobs and requests from the window both write
 
+# AUTOINCREMENT: a row's id is never given again. Without it SQLite reuses the id of the newest row once it is deleted
+# (a cancelled Clean and play, a Remove), and whatever the engine or the window still held for that id (a link's
+# stream, the open player) went to the next item: a cancelled YouTube video's picture showed over the next link.
+COLUMNS = ("id INTEGER PRIMARY KEY AUTOINCREMENT, added TEXT, source TEXT, title TEXT, sound TEXT, result TEXT, "
+           "rating TEXT DEFAULT '', reported INTEGER DEFAULT 0, ready INTEGER DEFAULT 1, saved TEXT DEFAULT ''")
+_ids_checked = False
+
+
+def _never_reuse_ids(con):
+    """history.db made by old Naqi or before 2026-11-26 has ids that can be reused: the table is copied once into
+    one with AUTOINCREMENT, same ids and rows (inside the caller's transaction: all or nothing)."""
+    global _ids_checked
+    if _ids_checked:
+        return
+    sql = con.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'files'").fetchone()[0]
+    if "AUTOINCREMENT" not in sql.upper():
+        names = "id, added, source, title, sound, result, rating, reported, ready, saved"
+        if not con.in_transaction:
+            con.execute("BEGIN")   # Python's sqlite3 opens none before CREATE: the copy must be one step
+        con.execute("DROP TABLE IF EXISTS files_new")
+        con.execute(f"CREATE TABLE files_new ({COLUMNS})")
+        con.execute(f"INSERT INTO files_new ({names}) SELECT {names} FROM files")
+        con.execute("DROP TABLE files")
+        con.execute("ALTER TABLE files_new RENAME TO files")
+    _ids_checked = True
+
 
 def _history(sql, args=()):
     """Runs one statement on history.db (made on first use). Returns (rows as dicts, id of a new row).
@@ -35,14 +61,13 @@ def _history(sql, args=()):
         try:
             con.row_factory = sqlite3.Row
             with con:   # commits
-                con.execute("CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, added TEXT, source TEXT, "
-                            "title TEXT, sound TEXT, result TEXT, rating TEXT DEFAULT '', reported INTEGER DEFAULT 0, "
-                            "ready INTEGER DEFAULT 1, saved TEXT DEFAULT '')")
+                con.execute(f"CREATE TABLE IF NOT EXISTS files ({COLUMNS})")
                 have = [c[1] for c in con.execute("PRAGMA table_info(files)")]
                 if "ready" not in have:   # made by v5.2 or older
                     con.execute("ALTER TABLE files ADD COLUMN ready INTEGER DEFAULT 1")
                 if "saved" not in have:   # made by v5.4 or older
                     con.execute("ALTER TABLE files ADD COLUMN saved TEXT DEFAULT ''")
+                _never_reuse_ids(con)
                 cur = con.execute(sql, args)
                 return [dict(r) for r in cur.fetchall()], cur.lastrowid
         finally:

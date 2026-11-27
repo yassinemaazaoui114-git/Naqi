@@ -4,6 +4,8 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import { dirname, join, normalize } from 'node:path'
 import { details, remember } from './details'
 import { Engine } from './engine'
+import { devLinks, linkIn, parseLink, registerLinks } from './links'
+import { applyLogin, setupTray, startHidden } from './tray'
 
 // Installed (T7.1): the engine is packed into resources\engine\NaqiEngine.exe; in dev it is engine\server.py
 // Each start gets the Settings page's device and keep rule (T11.2)
@@ -51,10 +53,11 @@ function setTheme(mode) {
 // Saved files go into a folder per day inside `folder` (old Naqi SPEC R10); default Videos\Naqi.
 // clip_asked: the copied links Home already offered to clean (T10.4, a JSON list), so each is asked once.
 // The Settings page (T11.2) shares folder and mp3_quality with Home, and adds keep_days / keep_gb (how long and how
-// much cleaned sound is kept, default 14 / 5) and device ('gpu' | 'cpu').
+// much cleaned sound is kept, default 14 / 5) and device ('gpu' | 'cpu'). T11.4 adds tray ('on' | 'off', closing hides
+// to the tray unless 'off'), login ('on' = start with Windows) and tray_told (the first hide's balloon was shown).
 const settingsFile = () => join(app.getPath('userData'), 'settings.json')
 const SETTINGS = ['folder', 'format', 'mp3_quality', 'mp4_quality', 'files_format', 'files_size', 'files_folder', 'volume', 'theater', 'steady', 'marks', 'clip_asked', 'sidebar',
-  'keep_days', 'keep_gb', 'device']
+  'keep_days', 'keep_gb', 'device', 'tray', 'login', 'tray_told']
 function readSaved() {
   try { return JSON.parse(readFileSync(settingsFile(), 'utf8')) } catch { return {} /* first start */ }
 }
@@ -70,6 +73,7 @@ function saveSettings(patch) {
   if (!process.env.NAQIE_SAVE_DIR) {
     try { writeFileSync(settingsFile(), JSON.stringify(next, null, 2)) } catch { /* not remembered, still used */ }
   }
+  if (typeof patch?.login === 'string') applyLogin(loadSettings())
   return loadSettings()
 }
 
@@ -127,9 +131,12 @@ async function systemInfo() {
     chrome: process.versions.chrome,
     python: python ? python.replace(/^Python\s+/, '') : null,
     ffmpeg: ffmpeg ? ffmpeg.split(' ')[2] : null,
-    gpu
+    gpu,
+    packaged: app.isPackaged   // Start with Windows works only in the installed app (Settings says so in dev)
   }
 }
+
+const icon = join(app.getAppPath(), 'build', 'icon.ico')
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -138,7 +145,7 @@ function createWindow() {
     minWidth: 720,
     minHeight: 480,
     title: 'Naqi | نقي',
-    icon: join(app.getAppPath(), 'build', 'icon.ico'),
+    icon,
     show: false,
     // Match the Windows theme before the page paints, so there is no white flash in dark mode.
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0a0f1e' : '#eef3fa',
@@ -150,7 +157,7 @@ function createWindow() {
       nodeIntegration: false
     }
   })
-  win.once('ready-to-show', () => win.show())
+  win.once('ready-to-show', () => { if (!startHidden) win.show() })   // started with Windows: stays in the tray
   const send = (status) => win.webContents.send('engine-status', status)
   const sendJob = (event, value) => {
     if (event === 'job') win.webContents.send('engine-job', value)
@@ -170,6 +177,11 @@ function createWindow() {
   else win.loadFile(join(__dirname, '../renderer', page), { query })
   return win
 }
+
+// The installed app runs once: opening it again (shortcut, Start, a naqi:// link) brings back the window, also from
+// the tray. Dev mode skips it, so npm start and the self-tests still run next to an installed Naqi; only dev links
+// (NAQI_LINKS=dev, T11.5) run once too, so a naqi:// link reaches the dev Naqi that is open.
+if ((app.isPackaged || devLinks) && !app.requestSingleInstanceLock()) app.exit(0)
 
 app.whenReady().then(async () => {
   loadTheme()
@@ -221,6 +233,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('choose-files', (event) => chooseFiles(BrowserWindow.fromWebContents(event.sender)))
   ipcMain.handle('choose-folder', (event) => chooseFolder(BrowserWindow.fromWebContents(event.sender)))
   ipcMain.handle('clipboard-text', () => clipboard.readText())
+  ipcMain.handle('clipboard-write', (_event, text) => clipboard.writeText(String(text)))   // Settings' Copy (T11.5)
   ipcMain.handle('clipboard-offer', () => (!process.env.NAQI_SELFTEST || process.env.NAQI_SELFTEST === 'clip' ? clipboard.readText() : ''))
   ipcMain.handle('show-in-folder', (_event, path) => showInFolder(path))
   ipcMain.handle('error-details', (_event, what) => details(engine, info, what || {}))
@@ -228,6 +241,22 @@ app.whenReady().then(async () => {
   engine.on('status', (s) => { if (s.status === 'ready') remember(engine) })   // its versions, for Copy details
   engine.start()
   const win = createWindow()
+  const tray = setupTray(win, icon, loadSettings, saveSettings)
+  // Share to Naqi (T11.5): a naqi:// link Windows started Naqi with, or passed on to the Naqi already running
+  const sendLink = (raw) => {
+    const link = parseLink(raw)
+    console.log('[naqi] link:', link.url || link.error)
+    const go = () => win.webContents.send('naqi-link', link)
+    if (win.webContents.isLoading()) win.webContents.once('did-finish-load', go)
+    else go()
+  }
+  app.on('second-instance', (_event, argv) => {
+    tray.show()
+    if (linkIn(argv)) sendLink(linkIn(argv))
+  })
+  if (linkIn(process.argv)) sendLink(linkIn(process.argv))
+  registerLinks()
+  applyLogin(loadSettings())
   console.log('[naqi] system info:', await info)
   const tests = { home: () => import('./hometest'), library: () => import('./librarytest'), player: () => import('./playertest'),
     report: () => import('./reporttest'), save: () => import('./savetest'), polish: () => import('./polishtest'),
@@ -237,10 +266,11 @@ app.whenReady().then(async () => {
     gear: () => import('./geartest'), sleep: () => import('./sleeptest'),
     steady: () => import('./steadytest'), marks: () => import('./markstest'),
     quality: () => import('./qualitytest'), search: () => import('./searchtest'), pip: () => import('./piptest'),
-    side: () => import('./sidetest'), settings: () => import('./settingstest') }
+    side: () => import('./sidetest'), settings: () => import('./settingstest'), tray: () => import('./traytest'),
+    share: () => import('./sharetest'), frame: () => import('./frametest'), upright: () => import('./uprighttest') }
   if (tests[process.env.NAQI_SELFTEST]) {
     const which = tests[process.env.NAQI_SELFTEST]()
-    const test = async () => (await which).run(win, engine)
+    const test = async () => (await which).run(win, engine, tray)
     if (win.webContents.isLoading()) win.webContents.once('did-finish-load', test)
     else test()
   } else if (process.env.NAQI_SELFTEST) (await import('./selftest')).run(win, engine)

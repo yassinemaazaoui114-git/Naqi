@@ -25,6 +25,27 @@ def check(name, ok):
     print(("PASS " if ok else "FAIL ") + name)
 
 
+# ---- an old history.db (old Naqi 5.2: no ready / saved, ids that can be reused) is moved to AUTOINCREMENT once
+import sqlite3   # noqa: E402
+os.makedirs(files.DATA_DIR, exist_ok=True)
+old = sqlite3.connect(history.HISTORY_DB)
+old.execute("CREATE TABLE files (id INTEGER PRIMARY KEY, added TEXT, source TEXT, title TEXT, sound TEXT, result TEXT, "
+            "rating TEXT DEFAULT '', reported INTEGER DEFAULT 0)")
+old.executemany("INSERT INTO files (id, added, source, title, rating) VALUES (?, ?, ?, ?, ?)",
+                [(1, "2026-01-01 10:00:00", "https://example.com/1", "One", "good"),
+                 (7, "2026-01-02 10:00:00", "https://example.com/7", "Seven", "")])
+old.commit()
+old.close()
+kept = {r["id"]: r for r in history.recent_history()}
+check("old history.db: rows and ids kept", sorted(kept) == [1, 7] and kept[1]["title"] == "One" and kept[1]["rating"] == "good"
+      and kept[7]["ready"] == 1 and kept[7]["saved"] == "")
+history.delete_row(7)
+n = history.add_history("https://example.com/n", "New", None, os.path.join(TMP, "n.mp3"))
+check("a deleted newest id is never given again", n == 8)
+import shutil   # noqa: E402
+shutil.rmtree(files.DATA_DIR)   # the checks below start from an empty data folder
+
+
 def make_sound(path, seconds):
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}",
                     path], check=True, capture_output=True)
@@ -75,6 +96,9 @@ r = history.find_history(own)
 check("set_rating + mark_reported", r["rating"] == "good" and r["reported"] == 1)
 history.delete_row(b)
 check("delete_row", [r["id"] for r in history.recent_history()] == [a])
+again = history.add_history("https://example.com/w", "Next link", None, os.path.join(TMP, "w.mp3"))
+check("the next row gets a new id, not the deleted one (a cancelled item's stream never goes to the next)", again > b)
+history.delete_row(again)
 
 # ---- "Clean and play" cache states
 c, folder = cached_row("played", 100)

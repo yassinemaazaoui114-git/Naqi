@@ -230,21 +230,41 @@ async function offerCopiedLink() {
     asked(link)
     toast('', 'Clean the link you copied?', link, '', {
       label: 'Clean and play', glyph: 'play', ms: 12000,
-      run: () => {
-        if (state.busy || state.engine.status !== 'ready') return
-        if (pages.shown() !== 'home') pages.show('home')   // the job card is on Home; a playing item goes to the corner
-        state.files = []
-        drawFiles()
-        url.value = link
-        url.dispatchEvent(new Event('input'))
-        $('#whole').checked = false   // a video in a playlist: just that video
-        refresh()
-        start()
-      }
+      run: () => { if (!state.busy && state.engine.status === 'ready') cleanAndPlay(link) }
     })
   } catch { /* the clipboard could not be read: nothing to offer */ } finally { checking = false }
 }
 window.addEventListener('focus', offerCopiedLink)
+
+// Clean and play one link (the copied-link offer, the "Clean in Naqi" bookmark)
+function cleanAndPlay(link) {
+  if (pages.shown() !== 'home') pages.show('home')   // the job card is on Home; a playing item goes to the corner
+  state.files = []
+  drawFiles()
+  url.value = link
+  url.dispatchEvent(new Event('input'))
+  $('#whole').checked = false   // a video in a playlist: just that video
+  refresh()
+  start()
+}
+
+// ---------- Share to Naqi (ROADMAP T11.5) ----------
+// The "Clean in Naqi" bookmark sends the open video page as naqi://clean?url=...; the main process checks it (a web
+// link only) and Naqi comes to the front with the link in the box on Home. Nothing starts until Clean and play is
+// clicked (Yassine, 2026-11-27). While a cleaning runs nothing is replaced: a toast says to click the bookmark again.
+window.naqi.onLink((l) => {
+  if (l.error) return toast('error', 'Naqi could not use that link', l.error)
+  if (state.busy) return toast('error', 'Naqi is busy cleaning', 'Wait until it is done (or cancel it), then click the bookmark again.')
+  asked(l.url)   // never offered from the clipboard after
+  if (pages.shown() !== 'home') pages.show('home')   // a playing item goes to the corner
+  state.files = []
+  drawFiles()
+  url.value = l.url
+  url.dispatchEvent(new Event('input'))
+  $('#whole').checked = false   // a video in a playlist: just that video
+  refresh()
+  go.focus()   // Enter starts it
+})
 $('#url-clear').addEventListener('click', () => { url.value = ''; url.dispatchEvent(new Event('input')); url.focus() })
 
 // ---------- Own files ----------

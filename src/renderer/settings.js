@@ -24,6 +24,7 @@ export async function open() {
   pages.show('settings')
   showKeep()
   showDevice()
+  showClose()
 }
 const goBack = (instant = false) => pages.show(s.back === 'player' && player.openId() === null ? 'home' : s.back, {}, { instant })
 $('#settings-back').addEventListener('click', () => goBack())
@@ -144,6 +145,45 @@ deviceEl.addEventListener('keydown', (e) => {
   next.focus()
   pickDevice(next.dataset.value)
 })
+// ---------- When you close Naqi (T11.4): the tray (on unless turned off) and Start with Windows (off unless on) ----------
+async function showClose() {
+  $('#set-tray').checked = s.settings.tray !== 'off'
+  $('#set-login').checked = s.settings.login === 'on'
+  if (!(await window.naqi.systemInfo()).packaged) $('#set-login-text').textContent = 'Naqi starts hidden in the tray when you sign in. Only the installed Naqi does this; here the choice is just kept.'
+}
+for (const [id, key] of [['#set-tray', 'tray'], ['#set-login', 'login']]) {
+  $(id).addEventListener('change', async (e) => { s.settings = await window.naqi.setSettings({ [key]: e.target.checked ? 'on' : 'off' }) })
+}
+
+// ---------- Clean from your browser (T11.5): the "Clean in Naqi" bookmark ----------
+// On a video page it sends that page to Naqi as naqi://clean?url=...; Windows hands it to Naqi (src/main/links.js).
+// Here it is only dragged or copied: a click in Naqi does nothing but say so.
+export const BOOKMARK = "javascript:void(location.href='naqi://clean?url='+encodeURIComponent(location.href))"
+const share = $('#share')
+const chip = $('#share-chip')
+chip.href = BOOKMARK
+chip.addEventListener('click', (e) => {
+  e.preventDefault()
+  $('#share-hint').textContent = 'Drag it to the browser; it works on a video page there'
+  chip.classList.remove('is-said')
+  void chip.offsetWidth   // the nudge plays again on every click
+  chip.classList.add('is-said')
+})
+chip.addEventListener('pointerenter', () => { if (!share.dataset.drag) share.dataset.drag = 'near' })
+chip.addEventListener('pointerleave', () => { if (share.dataset.drag === 'near') delete share.dataset.drag })
+chip.addEventListener('dragstart', () => { share.dataset.drag = 'on' })
+chip.addEventListener('dragend', () => { delete share.dataset.drag })
+$('#share-copy').addEventListener('click', async () => {
+  const label = $('#share-copy span')
+  try {
+    await window.naqi.copyText(BOOKMARK)
+    label.textContent = 'Copied'
+  } catch {
+    label.textContent = 'Not copied'
+  }
+  setTimeout(() => { label.textContent = 'Copy' }, 2000)
+})
+
 // The engine comes back: the page says on what it runs now
 window.naqi.onEngineStatus((st) => {
   if (!s.switching || (st.status !== 'ready' && st.status !== 'stopped' && st.status !== 'error')) return

@@ -39,6 +39,13 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 Name: "{group}\{#AppName}"; Filename: "{app}\Naqi.exe"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\Naqi.exe"; Tasks: desktopicon
 
+[Registry]
+; naqi:// links (T11.5): the "Clean in Naqi" bookmark opens Naqi with the video page; removed on uninstall
+Root: HKCU; Subkey: "Software\Classes\naqi"; ValueType: string; ValueName: ""; ValueData: "URL:Naqi"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\naqi"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\naqi\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\Naqi.exe"",0"
+Root: HKCU; Subkey: "Software\Classes\naqi\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Naqi.exe"" ""%1"""
+
 [Run]
 Filename: "{app}\Naqi.exe"; Description: "Open {#AppName}"; Flags: nowait postinstall skipifsilent
 

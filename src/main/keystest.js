@@ -48,7 +48,7 @@ export async function run(win, engine) {
   try {
     const data = process.env.NAQIE_DATA || ''
     if (!/naqie-t10\.1[\\/]?$/.test(data)) throw new Error('NAQIE_DATA must be a folder named naqie-t10.1 (the real history is never used)')
-    rmSync(data, { recursive: true, force: true })
+    try { rmSync(data, { recursive: true, force: true }) } catch { /* the engine may have it open already: emptied before the run */ }
     check('engine ready with the models', await until(async () => engine.status.status === 'ready' && (await engine.call('/health')).models, 120000), engine.status.gpu?.name)
     ipcMain.removeHandler('choose-files')
     ipcMain.handle('choose-files', () => [SAMPLE])
@@ -247,7 +247,7 @@ export async function run(win, engine) {
     s = await stats()
     check('typing in a box: no key acts', s.jumps.length === jumps && !(await paused()) && (await full()) === null && !(await cardOpen()) && (await vol()) === volBefore &&
       (await page(`document.querySelector('#mute').getAttribute('aria-label')`)) === 'Mute (M)',
-      `box holds "${await page(`document.querySelector('#keys-box').value`)}", sound ${at.toFixed(1)} -> ${s.at.toFixed(1)} s`)
+      `box holds "${await page(`document.querySelector('#keys-box').value`)}", sound ${at.toFixed(1)} -> ${s.at.toFixed(1)} s, jumps ${s.jumps.length - jumps}, paused ${await paused()}, full ${await full()}, card ${await cardOpen()}, volume ${volBefore} -> ${await vol()}, mute ${await page(`document.querySelector('#mute').getAttribute('aria-label')`)}`)
     await page(`document.querySelector('#keys-box').remove()`)
 
     await press('Escape', [], 600)

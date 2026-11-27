@@ -52,7 +52,7 @@ export async function run(win, engine) {
   try {
     const data = process.env.NAQIE_DATA || ''
     if (!/naqie-t10\.2[\\/]?$/.test(data)) throw new Error('NAQIE_DATA must be a folder named naqie-t10.2 (the real history is never used)')
-    rmSync(data, { recursive: true, force: true })
+    try { rmSync(data, { recursive: true, force: true }) } catch { /* the engine may have it open already: emptied before the run */ }
     theater0 = (await page('window.naqi.getSettings()')).theater ?? null
     await page(`window.naqi.setSettings({ theater: '0' })`)
     await page(`document.body.removeAttribute('data-theater')`)

@@ -290,6 +290,10 @@
               <button class="gear-item gear-act" role="menuitem" id="report-here"><i data-icon="flag" class="icon-sm"></i><span class="gear-name">Report here</span><span class="gear-value num" id="gear-report-value">0:00</span></button>
               <!-- T10.7: the picture in Windows' floating window (not the corner, which stays inside Naqi) -->
               <button class="gear-item gear-act" role="menuitemcheckbox" aria-checked="false" id="gear-pip"><i data-icon="pip" class="icon-sm"></i><span class="gear-name">Picture-in-picture</span><span class="gear-switch" aria-hidden="true"></span></button>
+              <!-- T13.3: a narrow screen (an upright picture, a small window) has no room for these on the bar -->
+              <button class="gear-item gear-act gear-narrow" role="menuitem" id="gear-mini"><i data-icon="mini" class="icon-sm"></i><span class="gear-name">Miniplayer</span><span class="gear-value">I</span></button>
+              <button class="gear-item gear-act gear-narrow" role="menuitemcheckbox" aria-checked="false" id="gear-theater"><i data-icon="theater" class="icon-sm"></i><span class="gear-name">Theater mode</span><span class="gear-switch" aria-hidden="true"></span></button>
+              <button class="gear-item gear-act gear-narrow" role="menuitem" id="gear-keys"><i data-icon="keys" class="icon-sm"></i><span class="gear-name">Keys</span><span class="gear-value">?</span></button>
             </div>
             <div class="gear-panel" data-name="speed" role="menu" aria-label="Speed">
               <button class="gear-item gear-head" data-go="main" aria-label="Back to the settings"><i data-icon="back" class="icon-sm"></i><span class="gear-name">Speed</span><span class="gear-value">voice stays natural</span></button>
@@ -339,6 +343,7 @@
           <div class="keys-row"><span>5 s back or forward</span><span class="keys-caps"><kbd data-k="left">←</kbd><kbd data-k="right">→</kbd></span></div>
           <div class="keys-row"><span>10 s back or forward</span><span class="keys-caps"><kbd data-k="j">J</kbd><kbd data-k="l">L</kbd></span></div>
           <div class="keys-row"><span>10 s, too</span><span class="keys-caps"><kbd data-k="shift-left shift-right">Shift</kbd><span class="keys-plus">+</span><kbd data-k="shift-left">←</kbd><kbd data-k="shift-right">→</kbd></span></div>
+          <div class="keys-row"><span>One frame back or forward (paused)</span><span class="keys-caps"><kbd data-k=",">,</kbd><kbd data-k=".">.</kbd></span></div>
           <p class="keys-group">Screen</p>
           <div class="keys-row"><span>Fullscreen (or double click)</span><span class="keys-caps"><kbd data-k="f">F</kbd></span></div>
           <div class="keys-row"><span>Miniplayer (keeps playing in the corner)</span><span class="keys-caps"><kbd data-k="i">I</kbd></span></div>
@@ -510,6 +515,46 @@
           </button>
         </div>
         <p class="set-note" id="device-note" aria-live="polite">Changing it starts the engine again (about 10 s). What is playing stops.</p>
+      </section>
+
+      <section class="card set-group" aria-labelledby="set-close">
+        <h2 class="set-title" id="set-close">When you close Naqi</h2>
+        <div class="set-rows">
+          <div class="set-row">
+            <div><p class="set-name" id="set-tray-name">Keep it ready in the tray</p><p class="meta">Closing the window keeps Naqi in the taskbar's hidden icons with its engine loaded, so the next cleaning starts at once. It uses about 1 GB of memory while it waits. Quit from the icon's menu.</p></div>
+            <label class="switch"><input type="checkbox" id="set-tray" aria-labelledby="set-tray-name" /></label>
+          </div>
+          <div class="set-row">
+            <div><p class="set-name" id="set-login-name">Start with Windows</p><p class="meta" id="set-login-text">Naqi starts hidden in the tray when you sign in, so it is ready when you need it.</p></div>
+            <label class="switch"><input type="checkbox" id="set-login" aria-labelledby="set-login-name" /></label>
+          </div>
+        </div>
+      </section>
+
+      <section class="card set-group" aria-labelledby="set-share">
+        <h2 class="set-title" id="set-share">Clean from your browser</h2>
+        <p class="meta set-lead">Add the Clean in Naqi bookmark once. Then, on a video page, click it: Naqi comes up with that video in the link box, also from the tray; then click Clean and play.</p>
+        <div class="share" id="share">
+          <!-- A little browser: the bookmark lands in the slot on its bookmarks bar while it is dragged or pointed at -->
+          <div class="share-browser" aria-hidden="true">
+            <div class="share-top"><span class="share-tab"></span></div>
+            <div class="share-address"><span>youtube.com/watch?v=…</span></div>
+            <div class="share-bar"><span class="share-mark"></span><span class="share-mark share-mark-short"></span><span class="share-slot"><span class="share-ghost"><img src="./assets/naqi.png" alt="" width="12" height="12" />Clean in Naqi</span></span></div>
+          </div>
+          <div class="share-take">
+            <a class="share-chip" id="share-chip" href="#" draggable="true" aria-describedby="share-hint"><img src="./assets/naqi.png" alt="" width="18" height="18" />Clean in Naqi</a>
+            <p class="meta" id="share-hint">Drag this onto the bookmarks bar</p>
+          </div>
+        </div>
+        <ol class="share-steps">
+          <li>Show the bookmarks bar in Chrome or Edge: Ctrl + Shift + B.</li>
+          <li>Drag <b>Clean in Naqi</b> onto it.</li>
+          <li>On a video page, click it. The first time, the browser asks to open Naqi: tick “Always allow”, then Open.</li>
+        </ol>
+        <div class="set-row">
+          <div><p class="set-name">Cannot drag it?</p><p class="meta">Copy it, right-click the bookmarks bar, choose Add page, name it Clean in Naqi and paste it as the address (URL).</p></div>
+          <button class="btn btn-quiet btn-sm" id="share-copy"><i data-icon="copy" class="icon-sm"></i><span>Copy</span></button>
+        </div>
       </section>
     </main>
     </div>

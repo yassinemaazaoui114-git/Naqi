@@ -34,7 +34,7 @@ FADE_S = 0.03         # fade in/out at each mute edge (no clicks)
 MP4_VIDEO = {"h264", "hevc", "av1", "vp9", "mpeg4"}   # video codecs an MP4 can hold as they are
 
 # Play while cleaning (SPEC R14a-c): the sound is cleaned in growing chunks, so playback can start after the first
-CHUNKS_S = [120, 300, 900]   # chunk sizes; the last one repeats...
+CHUNKS_S = [120, 300, 300]   # chunk sizes; the last one repeats (5 min, not 15: T10.9, the clean part grows ~every 40 s)...
 MIN_LAST_S = 180             # ...and a shorter last piece is merged into the one before
 CUT_SEARCH_S = 10            # each cut goes at the quietest 200 ms of the mix within this far of its planned time
 XFADE_S = 0.05               # neighbouring chunks overlap this much, cross-faded (no click at a seam)
@@ -450,7 +450,7 @@ def save_wav(path, wav, kbps=192, progress=lambda frac: None, cancel=lambda: Fal
 
 def chunk_plan(n):
     """Planned cuts (samples, inside the sound) for a sound of n samples: chunks of CHUNKS_S, a short last piece
-    merged into the one before. One rule for every length (a 19 min video = 2 + 5 + 12 min)."""
+    merged into the one before. One rule for every length (a 19 min video = 2 + 5 + 5 + 7 min)."""
     ends, pos, i = [], 0, 0
     while pos < n:
         pos += CHUNKS_S[min(i, len(CHUNKS_S) - 1)] * SR

@@ -94,6 +94,53 @@
 .device[data-busy='true'] [aria-checked='true'] .device-icon svg { animation: turn 1.6s linear infinite; }
 @keyframes turn { to { transform: rotate(360deg); } }
 
+/* ---------- Clean from your browser (T11.5): a little browser and the bookmark to drag onto its bar ---------- */
+.share { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: center; gap: var(--s5); padding: var(--s4); border-radius: var(--r-md); background: var(--sunken); }
+.share-browser { display: grid; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); box-shadow: var(--shadow-1); }
+.share-top { display: flex; align-items: end; height: 16px; padding-inline: 10px; background: var(--surface); }
+.share-tab { width: 42%; height: 10px; border-radius: 5px 5px 0 0; background: var(--bg); }
+.share-address { padding: 5px 10px; }
+.share-address span {
+  display: block; padding: 3px 10px; border-radius: var(--r-full); background: var(--sunken);
+  font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.share-bar { display: flex; align-items: center; gap: 6px; height: 26px; padding-inline: 10px; border-top: 1px solid var(--border); }
+.share-mark { width: 44px; height: 6px; border-radius: 3px; background: var(--border-strong); opacity: 0.7; }
+.share-mark-short { width: 28px; }
+/* The slot waits as a dashed outline; while the bookmark is pointed at or dragged, a small copy of it slides in */
+.share-slot {
+  display: grid; align-items: center; height: 18px; min-width: 92px; padding-inline: 4px;
+  border: 1px dashed var(--border-strong); border-radius: 5px;
+  transition: border-color var(--t-normal) ease, background-color var(--t-normal) ease;
+}
+.share-ghost {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 600; color: var(--text); white-space: nowrap;
+  opacity: 0; transform: translateY(-9px) scale(0.92);
+  transition: opacity var(--t-normal) ease, transform var(--t-slow) var(--ease-out);
+}
+.share[data-drag] .share-slot { border-color: var(--clean); background: var(--clean-soft); }
+.share[data-drag] .share-ghost { opacity: 1; transform: none; }
+.share[data-drag='on'] .share-slot { animation: slot 1.1s ease-in-out infinite; }
+@keyframes slot { 50% { border-color: transparent; } }
+
+.share-take { display: grid; justify-items: center; gap: var(--s2); text-align: center; }
+.share-take .meta { margin: 0; }
+.share-chip {
+  display: inline-flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s4);
+  border: 1px solid var(--border); border-radius: var(--r-full); background: var(--surface); box-shadow: var(--shadow-2);
+  color: var(--text); font-weight: 600; text-decoration: none; cursor: grab; user-select: none;
+  transition: transform var(--t-normal) var(--ease-out), box-shadow var(--t-normal) ease, border-color var(--t-fast) ease;
+}
+.share-chip:hover { transform: translateY(-2px) rotate(-1.5deg); border-color: var(--clean); box-shadow: var(--shadow-3); }
+.share-chip:active { cursor: grabbing; transform: scale(0.97); }
+.share[data-drag='on'] .share-chip { opacity: 0.45; transform: none; box-shadow: none; }
+.share-chip img { border-radius: 4px; }
+.share-chip.is-said { animation: nudge 360ms var(--ease-out); }
+@keyframes nudge { 30% { transform: translateX(-4px); } 60% { transform: translateX(3px); } }
+
+.share-steps { margin: 0; padding-left: 1.3em; display: grid; gap: var(--s1); font-size: var(--text-sm); color: var(--muted); }
+.share-steps b { color: var(--text); font-weight: 600; }
+
 /* ---------- The gear at the foot of the library ---------- */
 .side-foot { display: flex; align-items: center; gap: var(--s1); margin-top: auto; }
 .side-foot .side-report { flex: 1; margin-top: 0; }
@@ -104,11 +151,15 @@
 
 @media (max-width: 760px) {
   .set-row { grid-template-columns: 1fr; }
-  .set-row .seg, .set-folder { justify-self: start; }
+  .set-row .seg, .set-folder, #share-copy { justify-self: start; }
   .look { gap: var(--s2); }
+  .share { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
   .keep-bars i, .look-wave i { transition: none; }
   .device[data-busy='true'] [aria-checked='true'] .device-icon svg { animation: none; }
   .side-gear:hover svg, #rail-settings:hover svg { transform: none; }
+  .share-ghost, .share-chip { transition: opacity var(--t-normal) ease; }
+  .share-chip:hover, .share-ghost { transform: none; }
+  .share[data-drag='on'] .share-slot, .share-chip.is-said { animation: none; }
 }
