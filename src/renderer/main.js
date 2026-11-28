@@ -11,6 +11,8 @@ import { setupLaunch } from './launch.js'
 import * as library from './library.js'
 import * as pages from './pages.js'
 import * as player from './player.js'
+import * as queue from './queue.js'
+import './quickslip.js'
 import * as report from './report.js'
 import './settings.js'
 import { onRated, rate, rateEl, showRating } from './rating.js'
@@ -53,6 +55,7 @@ const state = {
   live: null,         // the latest event of the running "Clean and play" job
   opened: false,      // ...and the player opened it by itself once it could play
   playRow: null,      // the item the job card's Play button plays
+  ahead: null,        // T13.8: the Up next entry cleaned ahead now: { key, id, live, early, ended, yielded, playWhenReady }
   engine: { status: 'starting' },
   settings: { ...DEFAULTS }
 }
@@ -111,6 +114,7 @@ function refresh() {
     $('#files-title').textContent = `${n} file${n > 1 ? 's' : ''} ${state.busy ? 'being cleaned' : 'ready'}`
   }
   $('#url-clear').hidden = !link || state.busy
+  $('#queue-add').hidden = files || !one || !isLink(link)   // one video link (not a whole playlist)
 
   const shown = {
     fmt: !files && !one, quality: !files && !one, vfmt: videos > 0 && !one, vsize: videos > 0 && asMp4 && !one,
@@ -515,8 +519,11 @@ async function start() {
   run(spec, card)
 }
 
-async function run(spec, card) {
+// taken: Up next's cleaning ahead, already running, becomes this job (T13.8)
+async function run(spec, card, taken = null) {
+  if (state.busy) return
   lockInputs(true)
+  if (!taken) await stopAhead()   // what you start yourself goes before the cleaning ahead (one cleaning at a time)
   setOptions(false)
   refresh()
   setButton('Cancel', true, 'cancel')
@@ -524,8 +531,14 @@ async function run(spec, card) {
   state.live = null
   state.opened = false
   state.playRow = null
-  state.job = { id: null, kind: spec.kind }
-  state.jobKind = spec.kind
+  state.job = { id: taken?.id ?? null, kind: spec?.kind || 'play' }
+  state.jobKind = state.job.kind
+  state.jobTaken = !!taken   // not from Home's link box or files: they stay as they are when it ends
+  if (taken) {
+    state.opened = !!taken.live?.plays   // it is opened by whoever took it
+    if (taken.live) onJob(taken.live)
+    return
+  }
   try {
     const started = await window.naqi.startJob(spec)
     state.job.id = started.id
@@ -555,10 +568,11 @@ function onJob(j) {
   if (j.kind === 'play') onPlayJob(j)
   if (j.state === 'running') return progress(j.frac, j.text)
   state.live = null
+  state.forceOpen = false
   // Finished: saved files leave the list; failed or not-yet-done ones stay, ready to try again
   state.job = null
   lockInputs(false)
-  if (j.kind === 'files' || (j.kind === 'play' && j.state === 'done')) {
+  if (j.kind === 'files' || (j.kind === 'play' && j.state === 'done' && !state.jobTaken)) {
     const done = j.kind === 'play' ? state.files.map((f) => f.path) : j.done || []
     state.files = state.files.filter((f) => !done.some((d) => sameFile(d, f.path)))
     drawFiles()
@@ -569,7 +583,7 @@ function onJob(j) {
     // Cleaned and kept, nothing saved: Play and "Save as…" are in the player
     finish('done', 'Clean', j.text)
     if (j.row_id) askRating(j.row_id)
-    if (!state.files.length) { url.value = ''; url.dispatchEvent(new Event('input')) }
+    if (!state.files.length && !state.jobTaken) { url.value = ''; url.dispatchEvent(new Event('input')) }
     showDevice(j.numbers)
   } else if (j.state === 'done') {
     finish('done', j.outcome === 'partial' ? 'Partly saved' : 'Saved', `${j.text}, in ${dayFolder(j.last)}`)
@@ -581,6 +595,7 @@ function onJob(j) {
     finish('error', 'Something went wrong', j.text)
   }
   refresh()
+  setTimeout(cleanAhead)   // the engine is free: Up next's first one may be cleaned ahead
 }
 window.naqi.onJob(onJob)
 
@@ -593,22 +608,28 @@ function onPlayJob(j) {
   $('#play-now').hidden = !(j.row_id && (j.plays || j.state === 'done'))
   if (j.state === 'running' && j.plays && !state.opened) {
     state.opened = true
-    if (player.openId() === null || player.inCorner()) playItem(j.row_id)
+    const force = state.forceOpen   // Up next's link: it plays where the ended item was
+    state.forceOpen = false
+    if (force || player.openId() === null || player.inCorner()) playItem(j.row_id, { corner: force && player.inCorner() })
   }
 }
 $('#play-now').addEventListener('click', () => playItem(state.playRow))
 
 // Plays a library item. The one being cleaned plays once enough is clean; one whose cleaned sound was tidied away
 // is cleaned again first (old Naqi play()).
-async function playItem(id) {
+async function playItem(id, { corner = false } = {}) {
+  queue.hideNext()
+  // The one cleaned ahead (Up next) played from the library: its cleaning becomes Home's job
+  if (state.ahead?.live?.row_id === id) { queue.dropItem(id); takeAhead() }
   const live = state.live?.row_id === id ? state.live : null
   if (live && !live.plays) {
     player.close()
     return toast('', 'Not ready yet', 'It starts playing by itself as soon as the first part is clean.')
   }
   try {
-    await player.open(id, live)
+    await player.open(id, live, { corner })
     library.select(id)
+    queue.dropItem(id)   // it plays now: no need to wait for it in Up next
   } catch (e) {
     const why = e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
     if (why !== 'again') return toast('error', 'Could not play it', why, 'Player, opening an item')
@@ -622,6 +643,101 @@ async function playItem(id) {
 window.addEventListener('naqi-play', (e) => playItem(e.detail.id))
 window.addEventListener('naqi-removed', (e) => { if (player.openId() === e.detail.id) player.close() })
 window.addEventListener('naqi-saved', () => library.load())   // its saved format and Show in folder
+
+// ---------- Up next (ROADMAP T13.8, SPEC R50) ----------
+// The first entry is cleaned ahead as soon as the engine is free (the playing item is clean, nothing else runs), in
+// the background: Home stays free, and anything started by hand goes first (the cleaning ahead is cancelled and
+// starts again after). When its turn comes its cleaning becomes Home's "Clean and play" job (the job card, Cancel),
+// and it plays at once, or as soon as its first part is clean.
+$('#queue-add').addEventListener('click', () => {
+  const link = url.value.trim()
+  if (!isLink(link)) return
+  asked(link)
+  const r = queue.add({ url: link })
+  queueToast(r, link)
+  if (r !== 'full') { url.value = ''; url.dispatchEvent(new Event('input')); url.focus() }
+})
+function queueToast(result, title) {
+  if (result === 'added') toast('', 'Added to Up next', title)
+  else if (result === 'there') toast('', 'Already in Up next', title)
+  else toast('error', 'Up next is full', 'It holds 50. Play or take some out first.')
+}
+window.addEventListener('naqi-queued', (e) => queueToast(e.detail.result, e.detail.title))
+
+async function cleanAhead() {
+  // Taken out of Up next while it was cleaned ahead: its cleaning stops
+  if (state.ahead && !queue.entries().some((e) => e.key === state.ahead.key)) return stopAhead()
+  if (state.busy || state.ahead || state.engine.status !== 'ready') return
+  const next = queue.first()
+  if (!next || next.held) return
+  const it = next.id !== null ? library.item(next.id) : null
+  if (next.id !== null && it?.state !== 'again') return   // ready already (or gone, or the library not read yet)
+  const a = state.ahead = { key: next.key, id: null, live: null, early: [], ended: null, yielded: false, title: it?.title || next.url, kind: it?.kind || 'video' }
+  try {
+    a.id = (await window.naqi.startJob(next.id !== null ? { kind: 'play', row: next.id } : { kind: 'play', source: next.url })).id
+    window.dispatchEvent(new CustomEvent('naqi-ahead-job', { detail: { id: a.id } }))
+    for (const j of a.early.splice(0)) onAheadJob(j)
+  } catch (e) {
+    if (state.ahead === a) state.ahead = null
+    queue.hold(next.key, e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))
+  }
+}
+function onAheadJob(j) {
+  const a = state.ahead
+  if (!a || j.kind !== 'play') return
+  if (a.id === null) { a.early.push(j); return }
+  if (j.id !== a.id) return
+  if (j.row_id) queue.setId(a.key, j.row_id)
+  if (j.title) a.title = j.title
+  if (j.state === 'running') { a.live = j; queue.progress(a.key, j.frac); return }
+  state.ahead = null
+  queue.progress(a.key, null)
+  if (j.state === 'error' || (j.state === 'cancelled' && !a.yielded)) queue.hold(a.key, j.state === 'error' ? j.text : 'Its cleaning ahead was cancelled.')
+  else if (j.state === 'cancelled') queue.reset(a.key)   // made way: a link's row went with it, it cleans again after
+  a.ended?.()
+  setTimeout(cleanAhead)
+}
+window.naqi.onJob(onAheadJob)
+// Something started by hand goes first: the cleaning ahead is cancelled, and starts again once the engine is free
+async function stopAhead() {
+  const a = state.ahead
+  if (!a) return
+  a.yielded = true
+  const ended = new Promise((r) => { a.ended = r })
+  for (let i = 0; a.id === null && i < 50; i++) await new Promise((r) => setTimeout(r, 100))
+  try { await window.naqi.cancelJob(a.id) } catch { /* it ended by itself */ }
+  await Promise.race([ended, new Promise((r) => setTimeout(r, 5000))])
+  if (state.ahead === a) state.ahead = null
+}
+// Its turn (or played from the library): the cleaning ahead becomes Home's "Clean and play" job
+function takeAhead() {
+  const a = state.ahead
+  state.ahead = null
+  queue.progress(a.key, null)
+  run(null, { title: a.kind === 'audio' ? 'Cleaning your sound…' : 'Cleaning your video…', item: a.title, tag: a.kind === 'audio' ? 'AUDIO' : 'VIDEO' }, a)
+}
+
+// Its turn: it leaves Up next and plays where the last one was (the player or the corner)
+function playQueued(e) {
+  queue.drop(e.key)
+  const corner = player.inCorner()
+  if (state.ahead?.key === e.key) {
+    const live = state.ahead.live
+    takeAhead()
+    if (live?.plays && live.row_id) return playItem(live.row_id, { corner })
+    state.forceOpen = true
+    return player.note('Up next is still being cleaned: it plays as soon as its first part is clean.')
+  }
+  if (e.id !== null) return playItem(e.id, { corner })
+  // A link not cleaned yet: Clean and play it now
+  if (state.busy) {
+    queue.add({ url: e.url })
+    return toast('error', 'Naqi is busy cleaning', 'Up next plays it after, or cancel the cleaning on Home.')
+  }
+  asked(e.url)
+  state.forceOpen = true
+  run({ kind: 'play', source: e.url }, { title: 'Cleaning your video…', item: e.url, tag: 'VIDEO' })
+}
 
 // ---------- Rating after one cleaned file (several files are rated in the library) ----------
 const jobRate = $('#job-rate')
@@ -650,9 +766,9 @@ function hideRating() { jobRate.hidden = true }
 // Rated in the library: the card follows
 onRated(({ id, rating }) => { if (Number(jobRate.dataset.id) === id) showRating(jobRating, rating) })
 // Bad, wherever it was given: a bad file most likely has a slip to report (old SPEC R13), so the report opens with
-// it filled in. The player's item waits, paused, in the corner.
-onRated(({ id, rating }) => {
-  if (rating !== 'bad') return
+// it filled in. The player's item waits, paused, in the corner. Given in the player, the quick slip opens there.
+onRated(({ id, rating, from }) => {
+  if (rating !== 'bad' || from === 'player') return
   player.pause()
   report.open({ id })
 })
@@ -697,6 +813,8 @@ function showEngine(s) {
   }
   refresh()
   if (s.status === 'ready' && document.hasFocus()) offerCopiedLink()   // Naqi just opened (or the engine is back)
+  if (s.status === 'ready') setTimeout(cleanAhead)
+  else if (state.ahead) state.ahead = null   // its job went with the engine
 }
 $('#engine-restart').addEventListener('click', () => window.naqi.restartEngine())
 window.naqi.onEngineStatus(showEngine)
@@ -764,6 +882,7 @@ async function init() {
   player.setTheater(state.settings.theater === '1')
   player.setSteady(state.settings.steady === '1')
   player.setMarks(state.settings.marks !== '0')
+  queue.setupQueue({ saved: state.settings.queue, save: (v) => remember({ queue: v }), play: playQueued, changed: () => setTimeout(cleanAhead) })
   showEngine(await window.naqi.engineStatus())
   library.load()
   url.focus()

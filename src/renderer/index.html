@@ -43,6 +43,20 @@
         <div class="brand-name">Naqi <span class="ar" lang="ar">نقي</span></div>
         <button class="btn btn-icon btn-sm side-toggle" id="side-toggle" aria-label="Hide the library (Ctrl+B)" data-tip="Hide the library (Ctrl+B)"><i data-icon="sidebar" class="icon-sm"></i></button>
       </div>
+      <!-- T13.4: items left before the end, the last one watched first; a click plays on where it stopped -->
+      <section class="cont" id="cont" aria-labelledby="cont-label" hidden>
+        <h2 class="section-label" id="cont-label">Continue watching</h2>
+        <ul class="cont-list" id="cont-list"></ul>
+      </section>
+      <!-- T13.8: what plays when the video ends, in this order; the first one is cleaned ahead -->
+      <section class="cont upnext" id="upnext" aria-labelledby="upnext-label" hidden>
+        <div class="upnext-head">
+          <h2 class="section-label" id="upnext-label">Up next</h2>
+          <span class="tag num" id="upnext-count"></span>
+          <button class="btn-link upnext-clear" id="upnext-clear">Clear</button>
+        </div>
+        <ol class="cont-list upnext-list" id="upnext-list"></ol>
+      </section>
       <div class="side-head">
         <h2 class="section-label" id="lib-label">Library</h2>
         <span class="tag num" id="lib-count" hidden></span>
@@ -132,6 +146,7 @@
           </div>
           <p class="field-help" id="url-help" hidden></p>
           <label class="check" id="whole-row" hidden><input type="checkbox" id="whole" /> Clean the whole playlist</label>
+          <button class="btn btn-quiet btn-sm queue-add" id="queue-add" hidden><i data-icon="queue" class="icon-sm"></i>Add to Up next</button>
           <div class="or" aria-hidden="true"><span>or</span></div>
           <div class="zone-files-cta">
             <span class="drop-badge"><i data-icon="upload" class="icon-lg"></i></span>
@@ -233,6 +248,11 @@
           <h1 class="card-title watch-title" id="watch-title" dir="auto"></h1>
           <p class="meta watch-meta" id="watch-meta" aria-live="polite"></p>
         </div>
+        <!-- T13.9: rate it and report a slip at the playhead without leaving the player (quickslip.js) -->
+        <div class="watch-verdict" id="watch-verdict" hidden>
+          <span id="watch-rate"></span>
+          <button class="btn btn-sm slip-toggle" id="slip-toggle" aria-expanded="false" aria-controls="slip-panel" data-tip="Report a slip at this moment"><i data-icon="flag" class="icon-sm"></i>Quick slip</button>
+        </div>
       </div>
       <div class="player card">
         <div class="screen" id="screen" data-kind="video" data-picture="none">
@@ -243,6 +263,17 @@
           <!-- T10.7: while the picture is in the floating window, the screen says so and can bring it back -->
           <div class="screen-pip" id="screen-pip"><i data-icon="pip" class="icon-lg"></i><p>Playing in picture-in-picture</p><button class="btn btn-sm" id="pip-back">Bring the picture back</button></div>
           <span class="tag screen-tag num" id="clean-tag" hidden></span>
+          <!-- T13.8: the video ended and Up next has more: it plays after 5 s (moves with the picture into the corner) -->
+          <div class="next-card" id="next-card" hidden role="status">
+            <p class="next-label">Up next</p>
+            <p class="next-title" id="next-title" dir="auto"></p>
+            <p class="next-meta" id="next-meta"></p>
+            <div class="next-actions">
+              <button class="btn btn-primary btn-sm" id="next-now"><i data-icon="play" class="icon-sm"></i>Play now</button>
+              <button class="btn btn-ghost btn-sm" id="next-cancel">Cancel</button>
+            </div>
+            <span class="next-time" aria-hidden="true"></span>
+          </div>
           <!-- While the bar is hidden: a hairline at the bottom keeps the played and the clean part in sight -->
           <div class="screen-peek" id="screen-peek" aria-hidden="true"><div class="peek-clean"></div><div class="peek-played"></div></div>
           <!-- The bar on the picture (T10.1b): hides a moment after the mouse stops while the picture plays -->
@@ -252,6 +283,7 @@
               <div class="timebar-span" id="timebar-span"></div>
               <div class="timebar-edge"></div>
               <div class="timebar-thumb"></div>
+              <div class="timebar-frame" id="timebar-frame" aria-hidden="true"><canvas></canvas></div>
               <div class="timebar-tip" id="timebar-tip">0:00</div>
             </div>
             <div class="controls">
@@ -266,6 +298,11 @@
               <!-- T10.5b: shown while the sleep timer runs; a click opens its list -->
               <button class="sleep-chip num" id="sleep-chip" aria-label="Sleep timer" data-tip="Sleep timer" hidden><i data-icon="sleep" class="icon-sm"></i><span id="sleep-left"></span></button>
               <span class="row-gap"></span>
+              <!-- T13.10: hear the sound before cleaning (like HaramMute's switch); an item always opens on Clean -->
+              <span class="sound-switch" id="sound-switch" role="radiogroup" aria-label="Sound" data-on="clean">
+                <button role="radio" data-value="clean" aria-checked="true">Clean</button>
+                <button role="radio" data-value="original" aria-checked="false" data-tip="With its music">Original</button>
+              </span>
               <button class="btn btn-icon btn-sm" id="save-show" aria-label="Show the saved file in its folder" data-tip="Show in folder" hidden><i data-icon="folder" class="icon-sm"></i></button>
               <button class="btn btn-icon btn-sm" id="keys-toggle" aria-label="Keys (?)" data-tip="Keys (?)" aria-expanded="false" aria-controls="keys-card"><i data-icon="keys" class="icon-sm"></i></button>
               <!-- T10.5: settings like YouTube's (Speed first; the next settings join its list) -->
@@ -366,6 +403,29 @@
                 <div class="bar" id="save-bar" hidden><div class="bar-fill"></div></div>
                 <p class="meta save-status" id="save-status"></p>
                 <span id="save-details" hidden></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- T13.9: a quick slip, the 6 s up to the playhead; the same row and sound copy as the report page -->
+        <div class="disclosure" id="slip-panel" data-open="false">
+          <div>
+            <div class="slip-panel" role="group" aria-label="Quick slip">
+              <div class="slip-when">
+                <div class="field field-time"><input id="qs-from" class="num" aria-label="Slip from" autocomplete="off" /></div>
+                <span class="moment-span" aria-hidden="true"><span class="moment-len num" id="qs-len"></span></span>
+                <div class="field field-time"><input id="qs-to" class="num" aria-label="Slip to" autocomplete="off" /></div>
+              </div>
+              <div class="seg" id="qs-kind" aria-label="What went wrong">
+                <button data-value="music">Music heard</button><button data-value="speech">Talking cut</button><button data-value="singing">Singing cut</button><button data-value="effects">Other sound cut</button>
+              </div>
+              <div class="field slip-note"><input id="qs-note" placeholder="Note (optional)" autocomplete="off" aria-label="Note" /></div>
+              <div class="slip-foot">
+                <p class="report-status slip-status" id="qs-status" aria-live="polite"></p>
+                <span class="row-gap"></span>
+                <button class="btn btn-link btn-sm" id="qs-more" data-tip="The full report page, at this moment">Report page</button>
+                <button class="btn btn-ghost btn-sm" id="qs-close">Close</button>
+                <button class="btn btn-primary btn-sm" id="qs-save"><i data-icon="flag" class="icon-sm"></i><span id="qs-save-text">Save the slip</span></button>
               </div>
             </div>
           </div>

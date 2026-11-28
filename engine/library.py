@@ -41,6 +41,9 @@ def item(r, live_id=None):
         "format": "" if history.is_cache(shown) else os.path.splitext(shown)[1][1:].upper(),
         "state": "cleaning" if live else "again" if again else "ready" if here else "gone",
         "show": show, "rating": r.get("rating") or "", "reported": bool(r.get("reported")),
+        # Resume where you stopped (T13.4): unfinished items, with the picture of that moment
+        "at": r.get("at") or 0, "length": r.get("length") or 0, "watched": r.get("watched") or "",
+        "shot": (r.get("shot") or "") if r.get("at") else "",
     }
 
 
@@ -66,6 +69,17 @@ def rate(row_id, rating, live_id=None):
         raise ValueError("Not in the library any more.")
     history.set_rating(row_id, rating)
     return item(history.get_row(row_id), live_id)
+
+
+def position(row_id, body):
+    """Remembers where a played item stopped ({at, length, shot}); returns {at}: where it opens again (0 = from the
+    start: too short, barely started or finished). ValueError for an item that is not there or bad numbers."""
+    if not history.get_row(row_id):
+        raise ValueError("Not in the library any more.")
+    at, length = float(body.get("at") or 0), float(body.get("length") or 0)
+    if not (0 <= at <= 10**6 and 0 <= length <= 10**6):
+        raise ValueError("A position is a number of seconds.")
+    return {"at": history.set_position(row_id, at, length, body.get("shot") or "")}
 
 
 def remove(row_id, live_id=None):

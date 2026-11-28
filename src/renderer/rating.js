@@ -22,9 +22,10 @@ export function showRating(el, value) {
 }
 
 // Saves it; throws the engine's plain-words error. Everyone showing this item hears about it.
-export async function rate(id, value) {
+// from: 'player' when given in the player (T13.9): Bad opens the quick slip there instead of the report page.
+export async function rate(id, value, from = '') {
   const it = await window.naqi.rate(id, value)
-  window.dispatchEvent(new CustomEvent('naqi-rated', { detail: { id, rating: it.rating } }))
+  window.dispatchEvent(new CustomEvent('naqi-rated', { detail: { id, rating: it.rating, from } }))
   return it
 }
 

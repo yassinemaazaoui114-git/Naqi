@@ -54,7 +54,7 @@ function when(added) {
 }
 
 // '1:23', '1:02:03' or '83.5' -> seconds (speech_only.parse_time), NaN when it is not a time
-function seconds(text) {
+export function seconds(text) {
   const t = text.trim()
   if (!/^\d+(\.\d+)?$|^\d+(:\d{1,2}(\.\d+)?){1,2}$/.test(t)) return NaN
   return t.split(':').reduce((sum, part) => sum * 60 + Number(part), 0)

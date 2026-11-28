@@ -21,6 +21,7 @@ const audio = new Audio()
 audio.preload = 'auto'
 audio.crossOrigin = 'anonymous'   // so Steady volume's Web Audio chain may read it (T10.5c)
 const video = $('#picture')
+video.crossOrigin = 'anonymous'   // so the moment where it stopped may be drawn as a small picture (T13.4)
 const screen = $('#screen')
 const timebar = $('#timebar')
 const peek = $('#screen-peek')
@@ -42,7 +43,8 @@ const p = {
   note: '', noteTimer: 0,
   dragging: false,
   mutes: { parts: [], upto: 0 },     // where Naqi muted the sound (T10.2b), seconds; read up to `upto`
-  muteAsk: 0, muteBusy: false, muteAgain: false
+  muteAsk: 0, muteBusy: false, muteAgain: false,
+  played: false                      // it played since it opened: only then is where it stopped remembered (T13.4)
 }
 
 // Measured by the self-test: start, sync of every shown frame, waits at the clean edge
@@ -64,15 +66,16 @@ const cleanUpTo = () => (p.live ? p.ready : length())
 
 // ---------- Opening and closing ----------
 // Plays library item `id`; job: the running "Clean and play" job when it is this item. Throws the engine's
-// words: "again" when its cleaned sound is gone and it must be cleaned first.
-export async function open(id, job = null) {
+// words: "again" when its cleaned sound is gone and it must be cleaned first. corner: Up next (T13.8) plays the next
+// item where the last one was, so a video ending in the corner goes on in the corner.
+export async function open(id, job = null, { corner: inTheCorner = false } = {}) {
   // Already playing in the corner: back to it at the same moment
   if (id === p.id && inCorner()) { showPage(true); return p.item }
   const item = await window.naqi.openPlayer(id)
   close({ keepPage: true })
   openSave(item.save, await window.naqi.getSettings())
   Object.assign(p, { id, item, live: item.live, ready: item.live ? job?.ready_s || 0 : 0,
-    length: item.length || 0, waiting: false, pic: null, using: null, partS: 0, converted: false })
+    length: item.length || 0, waiting: false, pic: null, using: null, partS: 0, converted: false, played: false })
   Object.assign(stats, { firstPlaying: null, sync: [], waits: [], jumps: [] })
   $('#watch-title').textContent = item.title
   $('#watch-title').title = item.title
@@ -81,9 +84,16 @@ export async function open(id, job = null) {
   screen.dataset.bar = 'shown'
   wokeAt = performance.now()
   showNote('')
+  resetOriginal(!!item.original)
   audio.src = `${MEDIA}/${id}/sound`
+  // Where it stopped last time (T13.4). Past the clean part the sound simply waits there until it is clean.
+  if (item.at) {
+    audio.currentTime = item.at
+    showNote(`Back where you stopped, at ${clock(item.at)}.`)
+  }
   setLevel(Number(volume.value))
-  showPage(true)
+  if (inTheCorner && pages.shown() !== 'player') setCorner(true, true)
+  else showPage(true)
   // The cleaning may have ended while this item was being opened: its "done" event came before p.id was set
   if (item.live && finished.has(id)) { p.live = false; sv.info.ready = sv.info.can }
   const pq = quality
@@ -96,12 +106,14 @@ export async function open(id, job = null) {
   drawSave()
   audio.play().catch(() => { /* a later play() or Pause wins; the button shows the real state */ })
   draw()
+  window.dispatchEvent(new CustomEvent('naqi-player-opened', { detail: { id, rating: item.rating } }))
   return item
 }
 
 // Stops and unloads (the engine's held-back requests end with it). keepPage: another item opens right away.
 export function close({ keepPage = false, instant = false } = {}) {
   if (p.id === null) { if (!keepPage) showPage(false, instant); return }
+  keepPlace()
   p.id = null
   setCorner(false)
   p.mutes = { parts: [], upto: 0 }
@@ -111,7 +123,9 @@ export function close({ keepPage = false, instant = false } = {}) {
   audio.pause()
   audio.removeAttribute('src')
   audio.load()
+  resetOriginal(false)
   dropPicture()
+  window.dispatchEvent(new CustomEvent('naqi-player-closed'))
   if (!keepPage) showPage(false, instant)
 }
 
@@ -119,6 +133,7 @@ export const openId = () => p.id
 export const inCorner = () => !corner.hidden
 // The report page's moment is about what was just heard (Bad rating): the item waits, paused, in the corner
 export function pause() { audio.pause() }
+export const playhead = () => audio.currentTime || 0
 
 // Off: back to Home, only when the player is the page shown (closing it from another page leaves that page)
 function showPage(on, instant = false) {
@@ -169,6 +184,8 @@ $('#corner-close').addEventListener('click', () => {
   audio.pause()
   corner.classList.remove('is-entering')
   corner.classList.add('is-leaving')
+  // A window that is not painted (screen off) runs no animation, so the fade's end never comes
+  setTimeout(() => { if (corner.classList.contains('is-leaving')) close() }, 400)
 })
 corner.addEventListener('animationend', (e) => { if (e.target === corner && corner.classList.contains('is-leaving')) close() })
 // Only one sound at a time: the report page's strip pauses this one, and this one pauses the strip (strip.js)
@@ -239,6 +256,7 @@ function dropPicture() {
   video.removeAttribute('src')
   video.load()
   screen.dataset.picture = 'none'
+  resetPreview('')
 }
 
 function showPicture(url, which) {
@@ -258,7 +276,7 @@ function showPicture(url, which) {
     }
     if (soundPlays()) video.play().catch(() => {})
   }, { once: true })
-  video.addEventListener('loadeddata', () => { screen.dataset.picture = 'shown' }, { once: true })
+  video.addEventListener('loadeddata', () => { screen.dataset.picture = 'shown'; warmPreview() }, { once: true })
 }
 
 // picture.py's copies (and an own file that plays as it is), from the open answer and its "picture" events
@@ -415,6 +433,7 @@ function followSound() {
 
 audio.addEventListener('playing', () => {
   if (stats.firstPlaying === null) stats.firstPlaying = performance.now()
+  p.played = true
   if (p.waiting) stats.waits.push({ at: audio.currentTime, s: (performance.now() - p.waitFrom) / 1000 })
   p.waiting = false
   settleUntil = performance.now() + 1000
@@ -428,8 +447,41 @@ audio.addEventListener('waiting', () => {
   video.pause()
   draw()
 })
-audio.addEventListener('pause', () => { video.pause(); draw() })
+audio.addEventListener('pause', () => { video.pause(); draw(); keepPlace() })
 audio.addEventListener('ended', () => { video.pause(); draw() })
+
+// ---------- Resume where you stopped (ROADMAP T13.4, SPEC R48) ----------
+// The engine remembers the second it stopped at (on pause, every few seconds while playing, on close and when Naqi
+// quits) with a small picture of that moment for the library's Continue watching; it decides when an item counts as
+// finished (past 90% or in the last 60 s) and then opens it from the start.
+const KEEP_EVERY_MS = 5000
+const SHOT_W = 160
+let keptAt = 0
+function shotOf() {
+  if (screen.dataset.kind !== 'video' || video.readyState < 2 || !video.videoWidth) return ''
+  try {
+    const c = document.createElement('canvas')
+    c.width = SHOT_W
+    c.height = Math.round(SHOT_W * video.videoHeight / video.videoWidth)
+    c.getContext('2d').drawImage(video, 0, 0, c.width, c.height)
+    return c.toDataURL('image/jpeg', 0.7)
+  } catch { return '' }   // a picture the page may not read: the row shows its sign instead
+}
+function keepPlace() {
+  const len = length()
+  if (p.id === null || !p.played || !(len > 0)) return Promise.resolve()
+  const id = p.id
+  const at = audio.ended ? len : audio.currentTime
+  const shot = shotOf()
+  keptAt = performance.now()
+  return window.naqi.setPosition(id, at, len, shot)
+    .then((r) => window.dispatchEvent(new CustomEvent('naqi-position', { detail: { id, at: r.at, length: len, shot: r.at ? shot : '' } })))
+    .catch((e) => console.warn('[naqi] where it stopped:', cleanError(e)))   // a cancelled item is gone with its row
+}
+audio.addEventListener('timeupdate', () => { if (!audio.paused && performance.now() - keptAt > KEEP_EVERY_MS) keepPlace() })
+audio.addEventListener('ended', () => keepPlace())
+// Naqi quits (main process): the place is kept before the engine stops
+window.naqiKeepPlace = keepPlace
 audio.addEventListener('seeked', () => {
   // A frame step lands the picture in the middle of its frame, so it shows that frame and no other
   // A frame step already moved the picture to its frame
@@ -525,6 +577,7 @@ timebar.addEventListener('pointermove', (e) => {
   const blocked = p.live && f * len > p.ready
   const part = p.dragging ? null : mutedAt(f * timebar.clientWidth)
   showSpan(part)
+  previewAt(f * len, f * timebar.clientWidth)
   tip.dataset.blocked = blocked
   tip.textContent = blocked ? `${clock(f * len)} · not clean yet` : part ? `Muted ${clock(part[0])} – ${clock(part[1])}` : clock(f * len)
   // Centred on the pointer, but never past the screen's edge (the bar sits inside it)
@@ -533,7 +586,7 @@ timebar.addEventListener('pointermove', (e) => {
   tip.style.left = `${Math.min(w + TIP_ROOM - half, Math.max(half - TIP_ROOM, f * w))}px`
   if (p.dragging) drawTime(Math.min(f * len, cleanUpTo()))
 })
-timebar.addEventListener('pointerleave', () => showSpan(null))
+timebar.addEventListener('pointerleave', () => { showSpan(null); hidePreview() })
 timebar.addEventListener('pointerdown', (e) => {
   if (!length()) return
   timebar.setPointerCapture(e.pointerId)
@@ -547,6 +600,130 @@ timebar.addEventListener('pointerup', (e) => {   // the jump comes on release (o
   timebar.classList.remove('is-dragging')
   jump(fracAt(e) * length())
 })
+
+// ---------- Preview picture on the time bar (ROADMAP T13.5, SPEC R49) ----------
+// Hovering the clean part shows the picture of that moment above the time, like YouTube. A second muted <video>,
+// never shown, reads the same picture (a link: its smallest stream, through the engine) and is sought to the moment
+// under the pointer. Every frame it lands on is kept, one per second of the video, so a spot seen once shows at once
+// the next time; while a seek runs the last picture stays, and only the newest spot is sought next. Past the clean
+// part (and past a first-part copy) there is no picture: the tip alone says it is not clean yet.
+const PV_MAX = 168        // css px: the picture's longer side
+const PV_KEEP = 900       // pictures kept per item (one per second: 15 min of hovering)
+const pvBox = $('#timebar-frame')
+const pvCanvas = pvBox.querySelector('canvas')
+const pvVideo = document.createElement('video')
+pvVideo.muted = true
+pvVideo.preload = 'auto'   // a detached <video> with 'metadata' waits for the first hover to open
+pvVideo.crossOrigin = 'anonymous'
+const pvShots = new Map()   // second -> ImageBitmap
+const pv = { src: '', want: null, busy: false, on: false, drawn: null, failed: false, asked: 0, x: 0, times: [] }
+
+function previewUrl() {
+  if (p.id === null || screen.dataset.kind !== 'video' || !p.using) return ''
+  return p.using === 'stream' ? `${MEDIA}/stream/${p.id}/preview` : video.currentSrc || video.src
+}
+function resetPreview(url) {
+  for (const b of pvShots.values()) b.close()
+  pvShots.clear()
+  Object.assign(pv, { src: url, want: null, busy: false, drawn: null, failed: false, times: [] })
+  hidePreview()
+  pv.openedAt = url ? performance.now() : 0
+  pv.metaAt = 0
+  if (url) pvVideo.src = url
+  else { pvVideo.removeAttribute('src'); pvVideo.load() }
+}
+// Opened as soon as the picture shows, so the first hover does not wait for the file (or the link's lookup)
+function warmPreview() {
+  const url = previewUrl()
+  if (url && url !== pv.src) resetPreview(url)
+}
+pvVideo.addEventListener('error', () => { if (pvVideo.getAttribute('src')) { pv.failed = true; pv.busy = false; hidePreview() } })
+pvVideo.addEventListener('loadedmetadata', () => { pv.metaAt = performance.now(); if (pv.on) seekPreview() })
+
+function previewAt(t, x) {
+  const url = previewUrl()
+  const limit = p.using === 'part' ? p.partS : cleanUpTo()
+  if (!url || t > limit) return hidePreview()
+  if (url !== pv.src) resetPreview(url)
+  if (pv.failed) return hidePreview()
+  pv.on = true
+  pv.x = x
+  const key = Math.floor(t)
+  if (pv.want !== key) { pv.want = key; pv.asked = performance.now() }
+  const shot = pvShots.get(key)
+  if (shot) drawPreview(shot, key)
+  else seekPreview()
+  placePreview()
+}
+function seekPreview() {
+  if (pv.busy || pv.want === null || pvVideo.readyState < 1) return
+  const key = pv.want
+  const d = pvVideo.duration
+  pv.busy = true
+  pvVideo.currentTime = Math.min(key + 0.5, Number.isFinite(d) ? Math.max(0, d - 0.05) : key + 0.5)
+  pvVideo.addEventListener('seeked', async () => {
+    try {
+      const { w, h } = previewSize()
+      const dpr = window.devicePixelRatio || 1
+      const shot = await createImageBitmap(pvVideo, { resizeWidth: Math.round(w * dpr), resizeHeight: Math.round(h * dpr), resizeQuality: 'medium' })
+      pvShots.set(key, shot)
+      if (pvShots.size > PV_KEEP) { const [k, old] = pvShots.entries().next().value; old.close(); pvShots.delete(k) }
+      if (pv.on && pv.want === key) drawPreview(shot, key)
+    } catch { /* the source went away while it was sought */ }
+    pv.busy = false
+    if (pv.on && !pvShots.has(pv.want)) seekPreview()   // the pointer moved on meanwhile: the newest spot next
+  }, { once: true })
+}
+// The picture's shape: its longer side PV_MAX, never taller than about half the screen
+function previewSize() {
+  const vw = pvVideo.videoWidth || 16
+  const vh = pvVideo.videoHeight || 9
+  const max = Math.min(PV_MAX, Math.max(72, screen.clientHeight * 0.45))
+  const s = max / Math.max(vw, vh)
+  return { w: Math.round(vw * s), h: Math.round(vh * s) }
+}
+function drawPreview(shot, key) {
+  if (pv.drawn !== key) {
+    const dpr = window.devicePixelRatio || 1
+    if (pvCanvas.width !== shot.width || pvCanvas.height !== shot.height) {
+      pvCanvas.width = shot.width
+      pvCanvas.height = shot.height
+      pvCanvas.style.width = `${shot.width / dpr}px`
+      pvCanvas.style.height = `${shot.height / dpr}px`
+    }
+    pvCanvas.getContext('2d').drawImage(shot, 0, 0)
+    pv.drawn = key
+    pv.times.push(performance.now() - pv.asked)
+    if (pv.times.length > 200) pv.times.shift()
+  }
+  pvBox.dataset.on = 'true'
+  placePreview()
+}
+// Centred over the pointer like the tip, never past the bar's ends by more than the tip may
+function placePreview() {
+  if (pvBox.dataset.on !== 'true') return
+  const w = timebar.clientWidth
+  const half = pvBox.offsetWidth / 2
+  pvBox.style.left = `${Math.min(w + TIP_ROOM - half, Math.max(half - TIP_ROOM, pv.x))}px`
+}
+function hidePreview() {
+  pv.on = false
+  pvBox.dataset.on = 'false'
+}
+window.naqiPreview = () => ({ src: pv.src, on: pvBox.dataset.on === 'true', drawn: pv.drawn, want: pv.want,
+  busy: pv.busy, failed: pv.failed, kept: pvShots.size, at: pvVideo.currentTime, height: pvVideo.videoHeight,
+  width: pvVideo.videoWidth, readyState: pvVideo.readyState, times: pv.times.slice(),
+  opened: pv.openedAt ? performance.now() - pv.openedAt : null, meta: pv.metaAt ? pv.metaAt - pv.openedAt : null,
+  box: (({ left, top, width, height }) => ({ left, top, width, height }))(pvBox.getBoundingClientRect()),
+  tip: (({ left, top, width, height }) => ({ left, top, width, height }))(tip.getBoundingClientRect()),
+  lit: (() => {   // how varied the shown picture is (0 = one flat colour: nothing drawn)
+    try {
+      const d = pvCanvas.getContext('2d').getImageData(0, 0, pvCanvas.width, pvCanvas.height).data
+      let lo = 255, hi = 0
+      for (let i = 0; i < d.length; i += 16) { const v = (d[i] + d[i + 1] + d[i + 2]) / 3; lo = Math.min(lo, v); hi = Math.max(hi, v) }
+      return hi - lo
+    } catch { return -1 }
+  })() })
 
 // ---------- Steady volume (ROADMAP T10.5c) ----------
 // On, the sound goes through a small Web Audio chain in the window (no engine change): a slow compressor brings loud
@@ -602,11 +779,14 @@ audio.addEventListener('play', () => { if (steady.ctx?.state === 'suspended') st
 window.naqiSteady = () => ({ on: steady.on, built: !!steady.ctx, state: steady.ctx?.state, lag: steadyLag(), level, volume: audio.volume })
 window.naqiSteadyNodes = () => steady
 
-// The sound's level: the element's own volume, or once the chain is built its last gain
+// The sound's level: the element's own volume, or once the chain is built its last gain. The Clean / Original switch
+// (T13.10) shares it between the cleaned sound and the original.
 let level = 1
 function setLevel(v) {
   level = v
-  if (steady.out) { audio.volume = 1; steady.out.gain.value = v } else audio.volume = v
+  const clean = v * (1 - og.mix)
+  if (steady.out) { audio.volume = 1; steady.out.gain.value = clean } else audio.volume = clean
+  orig.volume = v * og.mix
 }
 
 // Volume and mute, remembered
@@ -647,6 +827,155 @@ export function setVolume(value) {
   showVolume()
 }
 
+// ---------- Clean / Original (ROADMAP T13.10, SPEC R52) ----------
+// A switch on the bar, like HaramMute's, plays the sound before cleaning, to judge Naqi's work by ear. The cleaned
+// <audio> stays the clock (the picture, the clean edge and the time bar follow it, so jumps still stay inside the
+// clean part); a second <audio> on the original follows it the way the picture does, and once it plays in step the
+// two cross over in a short fade (the cleaned one keeps playing, unheard, so nothing ever goes silent). An item always
+// opens on Clean, so music is never heard by surprise.
+// Both sounds run on the same sound card clock, so once in step they stay in step; what moves them apart is a jump's
+// start-up delay (learned: the next jump lands that much ahead) and a hiccup now and then. Small gaps are closed with a
+// timed nudge: the original runs a little faster or slower for exactly as long as the gap needs, then at its speed
+// again. Its clock is read only at its own speed and a moment after any change (while nudged the browser's clock is
+// off by a few tens of ms). At 1x a nudge is a plain resample (no voice-keeping stretch, which adds its own delay
+// the moment it starts; the pitch moves a little for a moment); at other speeds the stretch is on all the time anyway.
+// Until it is in step the original is not heard, so it may catch up faster; the cleaned sound is heard meanwhile.
+const ORIG_FADE_MS = 160
+const ORIG_JUMP_S = 0.12     // further off than this (the median of the last few looks) the original jumps (a jump
+//                              lands within about ±80 ms, so a closer one is caught up instead)...
+const ORIG_NUDGE_S = 0.008   // ...further than this it is nudged
+const ORIG_NUDGE = 0.03      // the nudge while heard (3%), and while not heard yet (8%)
+const ORIG_CATCH_UP = 0.08
+const ORIG_IN_STEP_S = 0.015 // it is heard once this close
+const ORIG_SETTLE_MS = 900   // after a jump or a start its clock reads true after this long...
+const ORIG_RESTED_MS = 600   // ...and after a nudge after this long
+const ORIG_LOOKS = 5
+const orig = new Audio()
+orig.preload = 'auto'
+const og = { ok: false, on: false, mix: 0, fadeFrom: 0, fadeAt: 0, goal: 0, sync: [], settle: 0, nudgeUntil: 0,
+  lead: 0, learn: false, looks: [], inStep: false }
+const soundSwitch = $('#sound-switch')
+// Where the original should be: the moment the cleaned sound is heard (Steady volume's chain delays it a little)
+const origTarget = () => audio.currentTime - audio.playbackRate * steadyLag()
+const origErr = () => orig.currentTime - origTarget()
+function drawSwitch(loading = false) {
+  soundSwitch.dataset.on = og.on ? 'original' : 'clean'
+  soundSwitch.dataset.loading = loading
+  for (const b of soundSwitch.querySelectorAll('button')) b.setAttribute('aria-checked', b.dataset.value === soundSwitch.dataset.on)
+  const o = soundSwitch.querySelector('[data-value="original"]')
+  o.disabled = !og.ok
+  o.dataset.tip = og.ok ? 'With its music' : 'Its original sound is no longer kept'
+}
+export function setOriginal(on) {
+  if (on && (!og.ok || p.id === null)) return
+  if (on === og.on) return
+  og.on = on
+  if (on) {
+    const src = `${MEDIA}/${p.id}/original`
+    if (orig.getAttribute('src') !== src) orig.src = src
+    origJump()
+    showNote('Original sound: the music is back. Clean takes it away again.')
+  } else showNote('')
+  followOrig()
+}
+function origJump() {
+  orig.playbackRate = audio.playbackRate
+  orig.currentTime = Math.max(0, origTarget() + og.lead * audio.playbackRate)
+  Object.assign(og, { settle: performance.now() + ORIG_SETTLE_MS, nudgeUntil: 0, learn: true, looks: [], inStep: false })
+}
+// Runs on a timer (not frames), so it keeps going in the corner, in picture-in-picture and with Naqi minimized
+function followOrig() {
+  const wanted = og.on && p.id !== null
+  if (!wanted && og.mix === 0) {
+    if (!orig.paused) orig.pause()
+    drawSwitch()
+    return
+  }
+  const plays = soundPlays()
+  if (wanted && orig.readyState >= 1) {
+    if (plays && orig.paused) orig.play().catch(() => {})
+    if (!plays && !orig.paused) orig.pause()
+  }
+  const playing = plays && !orig.paused && orig.readyState >= 3
+  const rate = audio.playbackRate
+  const now = performance.now()
+  if (orig.preservesPitch !== (rate !== 1)) orig.preservesPitch = rate !== 1
+  if (!playing) og.looks = []
+  else if (now >= og.nudgeUntil && orig.playbackRate !== rate) {   // a nudge ended (or the speed changed)
+    orig.playbackRate = rate
+    og.settle = Math.max(og.settle, now + ORIG_RESTED_MS)
+    og.looks = []
+  } else if (now > og.settle && now >= og.nudgeUntil) {
+    const err = origErr()
+    og.looks.push(err)
+    if (og.looks.length > ORIG_LOOKS) og.looks.shift()
+    if (og.mix === 1) og.sync.push([+audio.currentTime.toFixed(3), +err.toFixed(4)])
+    if (og.looks.length === ORIG_LOOKS) {
+      const e = [...og.looks].sort((a, b) => a - b)[ORIG_LOOKS >> 1]   // one late look is not a reason to move
+      if (og.learn) {   // where the last jump really landed (an odd landing counts half)
+        og.lead = Math.max(-0.25, Math.min(0.25, og.lead - (Math.abs(e) > ORIG_JUMP_S ? e / 2 : e) / rate))
+        og.learn = false
+      }
+      if (Math.abs(e) > ORIG_JUMP_S) origJump()
+      else {
+        if (Math.abs(e) < ORIG_IN_STEP_S) og.inStep = true
+        if (Math.abs(e) > ORIG_NUDGE_S) {
+          const step = og.mix === 0 ? ORIG_CATCH_UP : ORIG_NUDGE
+          orig.playbackRate = rate * (1 - Math.sign(e) * step)
+          og.nudgeUntil = now + (Math.abs(e) / (rate * step)) * 1000
+          og.looks = []
+        }
+      }
+    }
+  }
+  // Heard once it plays in step, or at once while nothing plays (paused, waiting at the clean edge)
+  const ready = wanted && orig.readyState >= 2 && (!plays || og.inStep)
+  fadeTo(ready ? 1 : 0, !plays)
+  drawSwitch(wanted && og.mix < 1)
+}
+function fadeTo(goal, instant) {
+  if (goal !== og.goal) Object.assign(og, { goal, fadeFrom: og.mix, fadeAt: performance.now() })
+  const t = instant ? 1 : Math.min(1, (performance.now() - og.fadeAt) / ORIG_FADE_MS)
+  const mix = og.fadeFrom + (og.goal - og.fadeFrom) * t
+  if (mix !== og.mix) { og.mix = mix; setLevel(level) }
+}
+function stepFade() {
+  if (og.mix !== og.goal) { fadeTo(og.goal, document.hidden); requestAnimationFrame(stepFade) }
+}
+setInterval(() => { followOrig(); stepFade() }, 50)
+for (const e of ['playing', 'pause', 'waiting', 'ended', 'ratechange']) audio.addEventListener(e, () => followOrig())
+audio.addEventListener('seeked', () => { if (og.on) origJump() })
+audio.addEventListener('volumechange', () => { orig.muted = audio.muted })
+orig.addEventListener('error', () => {
+  if (!orig.getAttribute('src') || p.id === null) return
+  og.ok = false
+  og.on = false
+  showNote("The original sound could not be played. Naqi's cleaned sound goes on.", true)
+  followOrig()
+})
+// Back on Clean and nothing left of the last item's original
+function resetOriginal(ok) {
+  Object.assign(og, { ok, on: false, mix: 0, goal: 0, sync: [], nudgeUntil: 0, looks: [], inStep: false })
+  orig.pause()
+  orig.removeAttribute('src')
+  orig.load()
+  setLevel(level)
+  drawSwitch()
+}
+soundSwitch.addEventListener('click', (e) => {
+  const b = e.target.closest('button')
+  if (b && !b.disabled) setOriginal(b.dataset.value === 'original')
+})
+// Its arrow keys pick a side (and do not also move the playhead)
+soundSwitch.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+  e.preventDefault()
+  setOriginal(e.key === 'ArrowRight')
+  soundSwitch.querySelector(`[data-value="${og.on ? 'original' : 'clean'}"]`).focus()
+})
+window.naqiOriginal = () => ({ lead: og.lead, ok: og.ok, on: og.on, mix: og.mix, sync: og.sync, at: orig.currentTime, err: orig.readyState >= 1 ? origErr() : null,
+  paused: orig.paused, rate: orig.playbackRate, volume: orig.volume, clean: steady.out ? steady.out.gain.value : audio.volume, src: orig.getAttribute('src') })
+
 // Fullscreen (F, its button or a double click on the picture): the screen alone. The browser leaves it on Escape by
 // itself; that Escape must not also close the player.
 const fullBtn = $('#full-toggle')
@@ -666,7 +995,7 @@ function toggleFull() {
 }
 fullBtn.addEventListener('click', toggleFull)
 // Not on the bar or the settings menu; a click that only closed the menu does nothing more (like YouTube)
-const onPicture = (e) => !bar.contains(e.target) && !gearMenu.contains(e.target) && !e.target.closest('#pip-back') &&
+const onPicture = (e) => !bar.contains(e.target) && !gearMenu.contains(e.target) && !e.target.closest('#pip-back, #next-card') &&
   performance.now() - gearClosedAt > 400
 screen.addEventListener('dblclick', (e) => { if (onPicture(e)) toggleFull() })
 // One click on the picture pauses or plays (like YouTube: a double click's two clicks cancel out)
@@ -941,7 +1270,12 @@ setInterval(() => {   // not tied to frames, so it still counts with the window 
   setLevel(Number(volume.value) * Math.min(1, sl.left / SLEEP_FADE_S))
   drawSleep()
 }, 200)
-audio.addEventListener('ended', () => { if (sl.mode === 'end') { setSleep('0'); showNote('Sleep timer: the video ended.') } })
+// The end: Up next (T13.8) plays on, unless the sleep timer was waiting for this end
+audio.addEventListener('ended', () => {
+  const stop = sl.mode === 'end'
+  if (stop) { setSleep('0'); showNote('Sleep timer: the video ended.') }
+  window.dispatchEvent(new CustomEvent('naqi-ended', { detail: { id: p.id, stop } }))
+})
 sleepChip.addEventListener('click', () => {
   setGear(true)
   showGearPanel('sleep')
@@ -1261,6 +1595,7 @@ function drawBar() {
 }
 
 // ---------- Drawing ----------
+export const note = (text) => showNote(text)
 function showNote(text, error = false) {
   clearTimeout(p.noteTimer)
   p.note = text

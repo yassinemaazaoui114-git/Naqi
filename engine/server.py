@@ -6,7 +6,7 @@ Electron process (NAQI_PARENT_PID) ends, so it never outlives the window.
 Routes: GET /health (state, the yt-dlp and Python versions in use), GET /gpu (graphics card), GET /events (event stream, server-sent events),
 POST /jobs (start a cleaning job, JSON body as in jobs.Jobs.start), GET /jobs/<id>, POST /jobs/<id>/cancel,
 POST /kinds (audio or video per file), POST /pictures (a video's picture for the player, body as in picture.Pictures.start), GET /pictures/<id>,
-POST /pictures/<id>/cancel, GET /library (the side bar's items), POST /library/<id>/remove, POST /library/<id>/rate,
+POST /pictures/<id>/cancel, GET /library (the side bar's items), POST /library/<id>/remove, POST /library/<id>/rate, POST /library/<id>/position ({at, length, shot}: where it stopped, T13.4),
 GET /library/<id>/wave (the shape of its cleaned sound, for the report page's sound strip), GET /library/<id>/muted
 (where it was muted, for the player's time bar; while it is cleaned, the clean part).
 Save (saves.py): POST /library/<id>/save ({fmt, size, kbps, out}: MP3 / MP4 from its cleaned sound), GET /saves/<id>,
@@ -16,7 +16,7 @@ about), POST /cases (save one: the sound is copied or downloaded, so the answer 
 Player (player.py): POST /player/<id> (open a library item: what to play and its picture), POST /player/<id>/convert
 (the browser could not show the picture as it is), POST /player/<id>/stream (the site refused the stream address:
 look it up again), POST /player/<id>/quality {"height": null | 1080 | 720 | 480 | 360} (a link's picture size); media for the page's <audio> and <video>, with byte ranges: GET /media/<id>/sound (the clean part
-only, while it is cleaned), GET /media/pictures/<picture id>/part | full, GET /media/stream/<id> (a link's picture).
+only, while it is cleaned), GET /media/<id>/original (the sound before cleaning, T13.10), GET /media/pictures/<picture id>/part | full, GET /media/stream/<id> (a link's picture), GET /media/stream/<id>/preview (its small stream for the time bar's preview, T13.5).
 Settings (T11.2): GET /keep (the keep rule and the space kept sounds take), POST /keep {"days", "gb"} (a new rule; it
 is applied at once when nothing runs). NAQI_DEVICE=cpu starts the engine on the CPU even with a graphics card.
 """
@@ -57,7 +57,8 @@ MEDIA_CHUNK = 256 * 1024
 _sizes = {}                      # cleaned.wav path -> the largest size the player was told (_send_file keep_size)
 _sizes_lock = threading.Lock()
 MEDIA_TYPES = {".wav": "audio/wav", ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".mp4": "video/mp4",
-               ".m4v": "video/mp4", ".mov": "video/quicktime", ".mkv": "video/x-matroska", ".webm": "video/webm"}
+               ".m4v": "video/mp4", ".mov": "video/quicktime", ".mkv": "video/x-matroska", ".webm": "video/webm",
+               ".flac": "audio/flac", ".ogg": "audio/ogg", ".opus": "audio/ogg"}
 
 TOKEN = os.environ.get("NAQI_TOKEN", "")
 _state = {"state": "starting", "error": None, "pid": os.getpid(), "models": False}   # models: loaded in memory
@@ -210,6 +211,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(library.rate(self._job_path("library")[0], self._body().get("rating"), _live_id()))
             except (ValueError, AttributeError) as e:   # bad JSON, a bad rating, or an item that is not there
                 self._json({"error": str(e)}, 400)
+        elif self._job_path("library") and self._job_path("library")[1] == "position":
+            try:
+                self._json(library.position(self._job_path("library")[0], self._body()))
+            except (ValueError, TypeError, AttributeError) as e:   # bad JSON or numbers, or an item that is not there
+                self._json({"error": str(e)}, 400)
         elif self._job_path("library") and self._job_path("library")[1] == "save":
             try:
                 self._json(_saves.start(self._job_path("library")[0], self._body(), _live_id()))
@@ -298,11 +304,15 @@ class Handler(BaseHTTPRequestHandler):
         if len(parts) == 2 and parts[0].isdigit() and parts[1] == "sound":
             row_id = int(parts[0])
             self._send_file(_player.sound_path(row_id), hold=lambda: player.clean_edge(_jobs.job, row_id), keep_size=True)
+        elif len(parts) == 2 and parts[0].isdigit() and parts[1] == "original":
+            self._send_file(_player.original_path(int(parts[0])))
         elif len(parts) == 3 and parts[0] == "pictures" and parts[1].isdigit() and parts[2] in ("part", "full"):
             item = _pictures.get(int(parts[1]))
             self._send_file(item and item.get(parts[2]))
         elif len(parts) == 2 and parts[0] == "stream" and parts[1].isdigit():
             self._send_stream(int(parts[1]))
+        elif len(parts) == 3 and parts[0] == "stream" and parts[1].isdigit() and parts[2] == "preview":
+            self._send_stream(int(parts[1]), preview=True)
         else:
             self._json({"error": "not found"}, 404)
 
@@ -358,14 +368,20 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:   # the browser dropped this request (it does on every jump), or the file was deleted
             self.close_connection = True
 
-    def _send_stream(self, row_id):
-        """A link's picture, passed through from the site with the headers yt-dlp says it needs."""
-        found = _player.stream_request(row_id)
+    def _send_stream(self, row_id, preview=False):
+        """A link's picture, passed through from the site with the headers yt-dlp says it needs. preview: its small
+        stream for the time bar's preview pictures (T13.5)."""
+        try:
+            found = _player.preview_request(row_id) if preview else _player.stream_request(row_id)
+        except Exception as e:   # the lookup failed (yt-dlp's words)
+            return self._json({"error": str(e)}, 502)
         if not found:
             return self._json({"error": "no stream"}, 404)
         try:
             status, out, body = player.open_stream(*found, self.headers.get("Range"))
         except Exception as e:   # refused (often 403) or no answer: the page looks it up once more
+            if preview:
+                _player.drop_preview(row_id)
             return self._json({"error": str(e)}, getattr(e, "code", None) or 502)
         try:
             self.send_response(status)

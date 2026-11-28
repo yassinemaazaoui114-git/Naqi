@@ -55,9 +55,10 @@ function setTheme(mode) {
 // The Settings page (T11.2) shares folder and mp3_quality with Home, and adds keep_days / keep_gb (how long and how
 // much cleaned sound is kept, default 14 / 5) and device ('gpu' | 'cpu'). T11.4 adds tray ('on' | 'off', closing hides
 // to the tray unless 'off'), login ('on' = start with Windows) and tray_told (the first hide's balloon was shown).
+// queue: Up next (T13.8, a JSON list of library items and links).
 const settingsFile = () => join(app.getPath('userData'), 'settings.json')
 const SETTINGS = ['folder', 'format', 'mp3_quality', 'mp4_quality', 'files_format', 'files_size', 'files_folder', 'volume', 'theater', 'steady', 'marks', 'clip_asked', 'sidebar',
-  'keep_days', 'keep_gb', 'device', 'tray', 'login', 'tray_told']
+  'keep_days', 'keep_gb', 'device', 'tray', 'login', 'tray_told', 'queue']
 function readSaved() {
   try { return JSON.parse(readFileSync(settingsFile(), 'utf8')) } catch { return {} /* first start */ }
 }
@@ -206,6 +207,8 @@ app.whenReady().then(async () => {
     engine.call(`/library/${Number(id)}/save`, { ...spec, out: loadSettings().folder }))
   ipcMain.handle('save-cancel', (_event, id) => engine.call(`/saves/${Number(id)}/cancel`, {}))
   ipcMain.handle('library-rate', (_event, id, rating) => engine.call(`/library/${Number(id)}/rate`, { rating }))
+  ipcMain.handle('library-position', (_event, id, at, length, shot) =>
+    engine.call(`/library/${Number(id)}/position`, { at: Number(at), length: Number(length), shot: String(shot || '') }))
   // Settings (T11.2): the keep rule (applied by the engine at once) and GPU or CPU (the engine starts again)
   ipcMain.handle('keep-get', () => engine.call('/keep'))
   ipcMain.handle('keep-set', (_event, days, gb) => {
@@ -267,7 +270,11 @@ app.whenReady().then(async () => {
     steady: () => import('./steadytest'), marks: () => import('./markstest'),
     quality: () => import('./qualitytest'), search: () => import('./searchtest'), pip: () => import('./piptest'),
     side: () => import('./sidetest'), settings: () => import('./settingstest'), tray: () => import('./traytest'),
-    share: () => import('./sharetest'), frame: () => import('./frametest'), upright: () => import('./uprighttest') }
+    share: () => import('./sharetest'), frame: () => import('./frametest'), upright: () => import('./uprighttest'),
+    resume: () => import('./resumetest'), preview: () => import('./previewtest'), queue: () => import('./queuetest'),
+    slips: () => import('./slipstest'), original: () => import('./originaltest') }
+  // Self-tests run silent (Yassine, 2026-11-27): the window's sound is muted, the player itself is unchanged
+  if (process.env.NAQI_SELFTEST) win.webContents.setAudioMuted(true)
   if (tests[process.env.NAQI_SELFTEST]) {
     const which = tests[process.env.NAQI_SELFTEST]()
     const test = async () => (await which).run(win, engine, tray)
@@ -279,9 +286,17 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => app.quit())
 
 // Stop the engine before the app ends, so no python.exe is left behind.
+// The open item's place is kept first (T13.4), given at most KEEP_PLACE_MS.
+const KEEP_PLACE_MS = 1500
 let stopped = false
+let stopping = false
 app.on('before-quit', (event) => {
   if (stopped) return
   event.preventDefault()
-  engine.stop().then(() => { stopped = true; app.quit() })
+  if (stopping) return
+  stopping = true
+  const page = BrowserWindow.getAllWindows()[0]?.webContents
+  const kept = page && !page.isDestroyed() ? page.executeJavaScript('window.naqiKeepPlace?.()').catch(() => {}) : null
+  Promise.race([kept, new Promise((resolve) => setTimeout(resolve, KEEP_PLACE_MS))])
+    .then(() => engine.stop()).then(() => { stopped = true; app.quit() })
 })

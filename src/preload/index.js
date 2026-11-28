@@ -35,6 +35,9 @@ contextBridge.exposeInMainWorld('naqi', {
   library: () => ipcRenderer.invoke('library'),
   removeFromLibrary: (id) => ipcRenderer.invoke('library-remove', id),
   rate: (id, rating) => ipcRenderer.invoke('library-rate', id, rating),   // 'bad' | 'good' | 'perfect' -> the item
+  // Where a played item stopped (T13.4): seconds, its length, a small JPEG data: URL of that moment -> { at } (where it
+  // opens again; 0 = from the start: short, barely started or finished)
+  setPosition: (id, at, length, shot) => ipcRenderer.invoke('library-position', id, at, length, shot),
   // Report a slip (engine/cases.py): the number saved; what a report is about ({ row } or { path } ->
   // { source, row, title, hint }); save one ({ source, start, end, expect, note, row } -> { count })
   slipCount: () => ipcRenderer.invoke('cases-count'),

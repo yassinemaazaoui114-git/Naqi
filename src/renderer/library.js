@@ -4,6 +4,8 @@
 // main.js decides how). Remove waits a few seconds with an Undo, then
 // the engine deletes the row and Naqi's own kept copy; saved files and own files are never touched.
 // T10.6: a search box (name) and filters (when, rating, link or own file) above the list hide the rows that do not match.
+// T13.4: Continue watching above the list: items stopped before the end, the last one watched first.
+// T13.8: Add to Up next in a row's actions puts it in Up next (queue.js).
 import { icon } from './design/icons.js'
 import { detailsButton } from './details.js'
 import { onRated, rate, rateEl, showRating } from './rating.js'
@@ -140,6 +142,7 @@ function rowEl(it) {
       <span class="btn btn-play" role="button" aria-label="Play" data-act="play">${icon('play')}</span>
     </button>
     <div class="lib-actions"><div>
+      <button class="btn btn-quiet btn-sm" data-act="next" tabindex="-1">${icon('queue', 'icon-sm')}Add to Up next</button>
       <button class="btn btn-quiet btn-sm" data-act="show" tabindex="-1">${icon('folder', 'icon-sm')}Show in folder</button>
       <button class="btn btn-quiet btn-sm btn-danger" data-act="remove" tabindex="-1">${icon('trash', 'icon-sm')}Remove</button>
     </div></div>`
@@ -150,6 +153,7 @@ function rowEl(it) {
     pick(it.id)
   })
   $('.lib-row', li).addEventListener('dblclick', (e) => { if (!e.target.closest('[data-act="play"]')) play(it.id) })
+  $('[data-act="next"]', li).addEventListener('click', () => window.dispatchEvent(new CustomEvent('naqi-queue', { detail: { id: it.id } })))
   $('[data-act="show"]', li).addEventListener('click', () => window.naqi.showInFolder(itemOf(it.id)?.show))
   $('[data-act="remove"]', li).addEventListener('click', () => remove(it.id))
   return li
@@ -178,6 +182,7 @@ function fill(li, it) {
   rating.hidden = it.state === 'cleaning'   // rated once it is clean
   showRating(rating, it.rating)
   $('[data-act="play"]', li).hidden = it.state === 'gone'
+  $('[data-act="next"]', li).hidden = it.state === 'gone'
   $('[data-act="show"]', li).hidden = !it.show
   $('[data-act="remove"]', li).hidden = it.state === 'cleaning'   // cancel it first (Home)
   $('[data-act="remove"]', li).title = 'Take it out of the library. Saved files stay where they are.'
@@ -224,7 +229,77 @@ function draw() {
   if (all.length && !shown.length) $('#lib-none-text').textContent = noneText()
   list.hidden = !shown.length
   mark()
+  drawCont()
 }
+
+// ---------- Continue watching (T13.4, SPEC R48) ----------
+// at > 0: the engine kept where it stopped (it is 0 again once finished). Hidden while searching or filtering, so the
+// narrowed list is the only answer shown.
+const CONT_MAX = 3
+const cont = $('#cont')
+const contList = $('#cont-list')
+const leftText = (it) => {
+  const m = Math.ceil((it.length - it.at) / 60)
+  return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min left` : `${m} min left`
+}
+function contRow(it) {
+  const li = document.createElement('li')
+  li.dataset.id = it.id
+  li.innerHTML = `<button class="lib-row cont-row"><span class="cont-shot"><span class="cont-play">${icon('play')}</span></span>
+    <span class="lib-text"><span class="lib-title" dir="auto"></span><span class="lib-meta"></span></span></button>`
+  $('button', li).addEventListener('click', () => play(it.id))
+  return li
+}
+function drawCont() {
+  const items = lib.items
+    .filter((it) => it.at > 0 && it.length > 0 && !lib.leaving.has(it.id) && (it.state === 'ready' || it.state === 'again'))
+    .sort((a, b) => (b.watched || '').localeCompare(a.watched || ''))
+    .slice(0, CONT_MAX)
+  const rows = new Map($$('li', contList).map((li) => [Number(li.dataset.id), li]))
+  for (const [id, li] of rows) if (!items.some((it) => it.id === id)) li.remove()
+  for (const it of items) {
+    let li = rows.get(it.id)
+    if (!li) { li = contRow(it); if (lib.drawn) li.classList.add('is-new') }
+    const row = $('button', li)
+    row.dataset.kind = it.kind
+    row.title = `${it.title}
+Plays on from ${clock(it.at)}`
+    $('.lib-title', li).textContent = it.title
+    $('.lib-meta', li).textContent = it.state === 'again' ? `${leftText(it)} · cleans again` : leftText(it)
+    const shot = $('.cont-shot', li)
+    shot.style.setProperty('--p', Math.min(1, it.at / it.length))
+    let img = $('img', shot)
+    // The picture of that moment, or the row's sign (a sound, or a picture the page could not read)
+    const glyph = it.shot ? '' : it.kind
+    if (shot.dataset.glyph !== glyph) {
+      $('.cont-glyph', shot)?.remove()
+      if (glyph) shot.insertAdjacentHTML('beforeend', icon(glyph, 'cont-glyph'))
+      shot.dataset.glyph = glyph
+    }
+    if (it.shot) {
+      if (!img) { img = document.createElement('img'); img.alt = ''; shot.prepend(img) }
+      if (img.getAttribute('src') !== it.shot) img.src = it.shot
+    } else img?.remove()
+    contList.append(li)
+  }
+  cont.hidden = !items.length || filtering()
+}
+const clock = (s) => {
+  s = Math.floor(s)
+  const h = Math.floor(s / 3600)
+  const mm = String(Math.floor((s % 3600) / 60))
+  const ss = String(s % 60).padStart(2, '0')
+  return h ? `${h}:${mm.padStart(2, '0')}:${ss}` : `${mm}:${ss}`
+}
+// Local time as the engine writes it (2026-11-27T14:03:05), so the two sort together
+const localNow = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 19) }
+// The player kept a new place: the group follows at once
+window.addEventListener('naqi-position', (e) => {
+  const it = itemOf(e.detail.id)
+  if (!it) return
+  Object.assign(it, { at: e.detail.at, length: e.detail.length, shot: e.detail.shot, watched: localNow() })
+  drawCont()
+})
 
 // The picked row: aria-current, its actions open, the light follows it (and its height while the actions open)
 function mark() {
@@ -349,6 +424,7 @@ export async function load() {
     try {
       lib.items = (await window.naqi.library()).items
       draw()
+      window.dispatchEvent(new CustomEvent('naqi-library'))   // Up next follows (queue.js)
     } catch { /* engine not up yet: it loads when the engine is ready */ }
   })()
   try { await loading } finally { loading = null }
@@ -361,6 +437,8 @@ export function select(id) {
 }
 
 window.naqi.onEngineStatus((s) => { if (s.status === 'ready') load() })
+const aheadJobs = new Set()
+window.addEventListener('naqi-ahead-job', (e) => aheadJobs.add(e.detail.id))
 window.naqi.onJob((j) => {
   if (j.kind === 'play' && j.state === 'running' && j.row_id) {
     const first = lib.live?.row_id !== j.row_id
@@ -371,7 +449,9 @@ window.naqi.onJob((j) => {
     if (it && li) fill(li, it)
   } else if (j.state !== 'running') {
     lib.live = null
-    load().then(() => { if (j.kind === 'play' && j.state === 'done' && j.row_id) select(j.row_id) })
+    // A cleaning ahead for Up next (T13.8) ends in the background: the picked row stays
+    const ahead = aheadJobs.delete(j.id)
+    load().then(() => { if (j.kind === 'play' && j.state === 'done' && j.row_id && !ahead) select(j.row_id) })
   }
 })
 // Files moved or deleted outside Naqi show as gone when the window comes back

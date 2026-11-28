@@ -6,6 +6,9 @@
   the browser can play (picture.py, first part then full); a link's picture is streamed (video only, up to 1080p
   or the size picked in the settings menu, found with yt-dlp; nothing is downloaded) through this engine, which adds the headers the site wants.
 It is found as soon as "Clean and play" starts (prepare), so it is there when the sound starts playing.
+- Original sound (T13.10): the sound before cleaning, for the player's Clean / Original switch: a link's kept sound
+  (kept like the cache, 2 weeks / 5 GB) or the own file. Played as it is when the browser can; else a quick copy of
+  its sound track (copied as it is, or re-encoded to AAC when the browser cannot play that format) in the item's folder.
 """
 import os
 import subprocess
@@ -20,6 +23,7 @@ import saves
 from files import DATA_DIR, NOWIN, VIDEO_EXTS, is_link
 
 STREAM_FRESH_S = 3600   # a found stream address is used again for this long (YouTube's last about 6 hours)
+PREVIEW_HEIGHT = 144     # the time bar's preview pictures (T13.5) come from the link's smallest stream, near this size
 SR, FRAME_BYTES, HEADER = 44100, 4, 44   # cleaned.wav: 44.1 kHz, 16-bit stereo, 44-byte header
 STREAM_FAILED = "Sound only: the picture could not be loaded."
 # The site's stream is asked for in pieces: YouTube sends an open-ended range ("bytes=N-") at about the video's own
@@ -31,6 +35,11 @@ STREAM_KEYS = ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges
 WAVE_RATE, WAVE_BINS = 8000, 2000   # the report's sound strip: its shape is read at 8 kHz, in this many peaks
 MUTED_HOP = 441          # the time bar's muted parts are read per 10 ms (the music-trace check's step)...
 MUTED_MIN_FRAMES = 30    # ...and a part is at least 0.3 s of exact silence (the check mutes 0.41 s or more)
+# The original sound plays as it is in these (ffprobe names; a file with a picture always gets a sound-only copy)
+PLAYS_SOUND = ("aac", "mp3", "opus", "vorbis", "flac", "pcm_s16le", "pcm_s24le", "pcm_f32le")
+PLAYS_SOUND_IN = ("mov,mp4", "mp3", "ogg", "wav", "flac")
+COPY_EXT = {"aac": ".m4a", "mp3": ".mp3", "opus": ".webm", "vorbis": ".webm", "flac": ".flac"}   # copied as it is
+ORIGINAL_WAIT_S = 300    # the page's request for the original waits this long for its copy
 
 
 class Player:
@@ -40,8 +49,11 @@ class Player:
         self.streams = {}   # row id -> {"state": running / done / error, "url", "headers", "at", "found", "text",
         #                    "height": the size asked (None = Auto), "got": the stream's size, "heights": the link's sizes}
         self.height = None  # the size picked in the settings menu (SPEC R39), for every link while the engine runs
+        self.previews = {}  # row id -> (address, headers, found): a link's small stream for the time bar's preview
+        self._preview_lock = threading.Lock()
         self.waves = {}     # row id -> ((path, mtime, size), shape): a strip read once per file
         self.mutes = {}     # row id -> the time bar's muted parts, read so far (muted())
+        self.originals = {}  # row id -> {"src", "state": running / done / error, "path", "done": Event}
         self._mute_lock = threading.Lock()
         self._lock = threading.Lock()
 
@@ -67,6 +79,8 @@ class Player:
             raise ValueError("Not in the library any more.")
         kind, src = self._picture_source(r)
         if kind == "stream":
+            # The preview's small stream is looked up now too, so the first hover does not wait for it (T13.5)
+            threading.Thread(target=self._warm_preview, args=(row_id,), daemon=True).start()
             return dict(self._stream(row_id, src, height=self.height), type="stream")
         if kind == "file":
             folder = history.history_folder(r) or os.path.join(DATA_DIR, "pictures")
@@ -149,6 +163,33 @@ class Player:
         s = self.streams.get(row_id)
         return (s["url"], s["headers"]) if s and s["state"] == "done" else None
 
+    def preview_request(self, row_id):
+        """(address, headers) of a link's small stream for the time bar's preview pictures (T13.5, SPEC R49), looked up
+        on the first ask (a few seconds; the page's request just waits) and kept like the picture's stream; None when
+        the link has none. A small stream, so a hover far away costs a small piece, not a 1080p one."""
+        with self._preview_lock:
+            found = self.previews.get(row_id)
+            if found and time.time() - found[2] < STREAM_FRESH_S:
+                return found[:2]
+            r = history.get_row(row_id)
+            if not r or self._picture_source(r)[0] != "stream":
+                return None
+            url, headers, _at, _sizes = downloads.video_stream(r["source"], PREVIEW_HEIGHT)
+            if not url:
+                return None
+            self.previews[row_id] = (url, dict(h.split(": ", 1) for h in headers), time.time())
+            return self.previews[row_id][:2]
+
+    def _warm_preview(self, row_id):
+        try:
+            self.preview_request(row_id)
+        except Exception:   # the page's own request tries again and says why
+            pass
+
+    def drop_preview(self, row_id):
+        """The site refused the preview's address: the next ask looks it up again."""
+        self.previews.pop(row_id, None)
+
     # ----- Opening an item -----
     def open(self, row_id, job):
         """What the page needs to play a library item; job: the running "Clean and play" job, or None.
@@ -165,7 +206,32 @@ class Player:
         it = library.item(r, row_id if live else None)
         return {"id": row_id, "title": it["title"], "from": it["from"], "added": it["added"], "kind": it["kind"],
                 "rating": it["rating"], "live": live, "length": (job or {}).get("total_s") if live else None,
+                "at": it["at"],   # where it stopped last time (T13.4); 0 = from the start
+                "original": self._original(row_id) is not None,   # the Clean / Original switch (T13.10)
                 "picture": self.prepare(row_id), "save": save_info(r, row_id if live else None)}
+
+    # ----- The original sound (ROADMAP T13.10) -----
+    def _original(self, row_id):
+        """Starts getting row's original sound ready (at once when it plays as it is); None when there is none
+        (a link's kept sound was tidied away, the own file was moved)."""
+        r = history.get_row(row_id)
+        src = r and _original_source(r)
+        if not src:
+            return None
+        with self._lock:
+            o = self.originals.get(row_id)
+            if o and o["src"] == src and (o["state"] == "running" or (o["state"] == "done" and os.path.isfile(o["path"]))):
+                return o
+            o = self.originals[row_id] = {"src": src, "state": "running", "path": None, "done": threading.Event()}
+        threading.Thread(target=_make_original, args=(r, o), daemon=True).start()
+        return o
+
+    def original_path(self, row_id):
+        """The file the page plays as the original sound (waits for its copy), or None."""
+        o = self._original(row_id)
+        if not o or not o["done"].wait(ORIGINAL_WAIT_S):
+            return None
+        return o["path"] if o["state"] == "done" else None
 
     # ----- The report page's sound strip (ROADMAP T5.2) -----
     def wave(self, row_id, job):
@@ -226,6 +292,63 @@ class Player:
     def sound_path(self, row_id):
         r = history.get_row(row_id)
         return (history.play_path(r) or None) if r else None
+
+
+def _original_source(r):
+    for path in (r.get("sound"), None if is_link(r["source"]) else r["source"]):
+        if path and os.path.isfile(path):
+            return path
+    return None
+
+
+def _sound_plan(path):
+    """(codec, plays as it is) of the file's first sound track; codec None when it has none."""
+    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
+                          "stream=codec_name,codec_type:stream_disposition=attached_pic:format=format_name",
+                          "-of", "default=nw=1", path],
+                         capture_output=True, text=True, stdin=subprocess.DEVNULL, creationflags=NOWIN).stdout
+    streams, container, cur = [], "", {}
+    for line in out.splitlines():
+        key, _, value = line.partition("=")
+        if key == "codec_name":
+            cur = {"codec": value}
+            streams.append(cur)
+        elif key in ("codec_type", "DISPOSITION:attached_pic"):
+            cur[key] = value
+        elif key == "format_name":
+            container = value
+    sound = next((s["codec"] for s in streams if s.get("codec_type") == "audio"), None)
+    picture = any(s.get("codec_type") == "video" and s.get("DISPOSITION:attached_pic") != "1" for s in streams)
+    webm = container.startswith("matroska") and path.lower().endswith(".webm")
+    plays = sound in PLAYS_SOUND and not picture and (container.startswith(PLAYS_SOUND_IN) or webm)
+    return sound, plays
+
+
+def _make_original(r, o):
+    """Readies o["src"] for the page's <audio>: as it is, or a copy of its sound in the item's folder (reused)."""
+    src = o["src"]
+    try:
+        codec, plays = _sound_plan(src)
+        if not codec:
+            raise ValueError("no sound")
+        if plays:
+            o.update(state="done", path=src)
+            return
+        ext = COPY_EXT.get(codec, ".m4a")
+        folder = history.history_folder(r) or os.path.join(DATA_DIR, "pictures")
+        os.makedirs(folder, exist_ok=True)
+        dst = os.path.join(folder, f"original-play-{r['id']}{ext}")
+        if not (os.path.isfile(dst) and os.path.getmtime(dst) >= os.path.getmtime(src)):
+            part = dst + ".part" + ext
+            how = ["-c:a", "copy"] if codec in COPY_EXT else ["-c:a", "aac", "-b:a", "192k"]
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", src, "-map", "0:a:0", "-vn", *how, part],
+                           capture_output=True, stdin=subprocess.DEVNULL, creationflags=NOWIN, check=True)
+            os.replace(part, dst)
+        o.update(state="done", path=dst)
+    except Exception:
+        o.update(state="error")
+    finally:
+        o["done"].set()
 
 
 def save_info(r, live_id=None):

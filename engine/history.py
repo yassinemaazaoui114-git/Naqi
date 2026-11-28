@@ -28,7 +28,8 @@ _history_lock = threading.Lock()   # jobs and requests from the window both writ
 # (a cancelled Clean and play, a Remove), and whatever the engine or the window still held for that id (a link's
 # stream, the open player) went to the next item: a cancelled YouTube video's picture showed over the next link.
 COLUMNS = ("id INTEGER PRIMARY KEY AUTOINCREMENT, added TEXT, source TEXT, title TEXT, sound TEXT, result TEXT, "
-           "rating TEXT DEFAULT '', reported INTEGER DEFAULT 0, ready INTEGER DEFAULT 1, saved TEXT DEFAULT ''")
+           "rating TEXT DEFAULT '', reported INTEGER DEFAULT 0, ready INTEGER DEFAULT 1, saved TEXT DEFAULT '', "
+           "at REAL DEFAULT 0, length REAL DEFAULT 0, watched TEXT DEFAULT '', shot TEXT DEFAULT ''")
 _ids_checked = False
 
 
@@ -40,7 +41,8 @@ def _never_reuse_ids(con):
         return
     sql = con.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'files'").fetchone()[0]
     if "AUTOINCREMENT" not in sql.upper():
-        names = "id, added, source, title, sound, result, rating, reported, ready, saved"
+        names = ", ".join(c.split()[0] for c in COLUMNS.split(", ") if c.split()[0] in
+                          [r[1] for r in con.execute("PRAGMA table_info(files)")])
         if not con.in_transaction:
             con.execute("BEGIN")   # Python's sqlite3 opens none before CREATE: the copy must be one step
         con.execute("DROP TABLE IF EXISTS files_new")
@@ -67,6 +69,9 @@ def _history(sql, args=()):
                     con.execute("ALTER TABLE files ADD COLUMN ready INTEGER DEFAULT 1")
                 if "saved" not in have:   # made by v5.4 or older
                     con.execute("ALTER TABLE files ADD COLUMN saved TEXT DEFAULT ''")
+                if "at" not in have:   # made before T13.4 (resume where you stopped)
+                    for col in ("at REAL DEFAULT 0", "length REAL DEFAULT 0", "watched TEXT DEFAULT ''", "shot TEXT DEFAULT ''"):
+                        con.execute(f"ALTER TABLE files ADD COLUMN {col}")
                 _never_reuse_ids(con)
                 cur = con.execute(sql, args)
                 return [dict(r) for r in cur.fetchall()], cur.lastrowid
@@ -189,6 +194,32 @@ def add_saved(row_id, path):
 
 def set_rating(row_id, rating):
     _history("UPDATE files SET rating = ? WHERE id = ?", (rating, row_id))
+
+
+# Resume where you stopped (ROADMAP T13.4, SPEC R48): at = the second to open at again (0 = from the start)
+RESUME_MIN_LENGTH_S = 60    # shorter items always open from the start
+RESUME_MIN_AT_S = 10        # stopped in the first seconds: not started really, it opens from the start
+FINISHED_SHARE = 0.9        # past 90%...
+FINISHED_LEFT_S = 60        # ...or in the last 60 s it counts as finished (Yassine, 2026-11-27)
+
+
+def resume_at(at, length):
+    """Where an item stopped at `at` of `length` seconds opens again: `at`, or 0 when it is too short, barely
+    started or finished."""
+    at, length = float(at or 0), float(length or 0)
+    if length < RESUME_MIN_LENGTH_S or at < RESUME_MIN_AT_S or at >= FINISHED_SHARE * length or length - at <= FINISHED_LEFT_S:
+        return 0.0
+    return round(at, 2)
+
+
+def set_position(row_id, at, length, shot=""):
+    """Remembers where a played item stopped (and a small picture of that moment, a data: URL). Returns the
+    second it will open at."""
+    at = resume_at(at, length)
+    shot = shot if at and isinstance(shot, str) and shot.startswith("data:image/jpeg;base64,") and len(shot) < 60000 else ""
+    _history("UPDATE files SET at = ?, length = ?, watched = ?, shot = ? WHERE id = ?",
+             (at, float(length or 0), datetime.datetime.now().isoformat(timespec="seconds"), shot, row_id))
+    return at
 
 
 def mark_reported(row_id):
